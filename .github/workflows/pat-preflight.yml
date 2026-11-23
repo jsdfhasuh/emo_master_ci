@@ -1,4 +1,4 @@
-name: GitHub credential read-only preflight
+name: GitHub credential and scoped status preflight
 
 on:
   push:
@@ -59,4 +59,39 @@ jobs:
           # Metadata reachability is not evidence of write permissions or of
           # future private checkout. A Secrets read is a scope signal only.
           raise SystemExit(0 if statuses[:2] == [200, 200] else 1)
+          PY
+      - name: Test one non-required status on the pinned draft commit
+        env:
+          CI_PREFLIGHT_CREDENTIAL: ${{ secrets.EMO_CI_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import http.client
+          import json
+          import os
+
+          secret = os.environ.pop("CI_PREFLIGHT_CREDENTIAL", "")
+          if not secret:
+              print("draft_status_write=credential_missing")
+              raise SystemExit(1)
+          client = http.client.HTTPSConnection("api.github.com", timeout=15)
+          try:
+              # Fixed test-only context and an existing, exact migration draft SHA.
+              payload = json.dumps({"state": "success",
+                                    "context": "dot-ci-migration/token-preflight",
+                                    "description": "Credential write probe only; not a test result"})
+              client.request("POST", "/repos/jsdfhasuh/emo_master/statuses/baf307c1820185f959d3202180d1f1c66eb4306e", payload, {
+                  "Authorization": "Bearer " + secret,
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+                  "User-Agent": "emo-ci-scoped-preflight",
+                  "X-GitHub-Api-Version": "2026-03-10",
+              })
+              status = client.getresponse().status
+          except (OSError, ValueError, http.client.HTTPException):
+              status = 0
+          finally:
+              client.close()
+          print("draft_status_write=" + {201: "pass", 401: "unauthorized", 403: "forbidden",
+                                         404: "not_found", 422: "rejected"}.get(status, "request_error"))
+          raise SystemExit(status != 201)
           PY
