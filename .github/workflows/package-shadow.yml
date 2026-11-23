@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: cc68df54803489356fabd158293c99c0c1e2ef85
+          ref: 9edd522e0378adb91ee1a50c349b3fcdd7cd3fbc
           path: product
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -63,6 +63,7 @@ jobs:
       - name: Build and validate without submitting a release
         env:
           BUILD_TARGET: ${{ matrix.target }}
+          EXPECTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
           HUARAY_CAMERA_SMOKE: '0'
           QT_QPA_PLATFORM: offscreen
         shell: python
@@ -87,9 +88,18 @@ jobs:
           args = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
                   str(source / "scripts/ci_migration/windows/windows-build-validate.ps1"),
                   "-Target", os.environ["BUILD_TARGET"], "-SourceRoot", str(source), "-PackagerRoot", str(packager),
-                  "-SourceSha", "cc68df54803489356fabd158293c99c0c1e2ef85", "-ReleaseTag", "v" + version,
-                  "-OutputDirectory", str(private / "product-build-verification")]
+                  "-SourceSha", "9edd522e0378adb91ee1a50c349b3fcdd7cd3fbc", "-ReleaseTag", "v" + version,
+                  "-WorkflowSha", os.environ["EXPECTED_WORKFLOW_SHA"], "-OutputDirectory", str(private / "product-build-verification")]
           with (private / "product-build.log").open("xb") as log:
               result = subprocess.run(args, env=safe_env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+          phase_file = private / "product-build-verification" / "stage.txt"
+          phases = {b"runtime-source", b"runtime-identity", b"build", b"runtime-archive-native",
+                    b"designer-icons", b"designer-contract", b"designer-frozen", b"complete"}
+          try:
+              with phase_file.open("rb") as phase_stream:
+                  phase = phase_stream.read(64)
+          except OSError:
+              phase = b"preflight"
+          print("build_stage=" + (phase.decode("ascii") if phase in phases else "preflight_or_unknown"))
           print("build_and_validate=" + ("success" if result.returncode == 0 else "failure"))
           sys.exit(result.returncode != 0)
