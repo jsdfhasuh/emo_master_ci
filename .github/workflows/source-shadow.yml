@@ -1,0 +1,52 @@
+name: Public product source shadow
+on:
+  push:
+    branches: [dot/public-source-shadow-20261123]
+
+permissions:
+  contents: read
+
+jobs:
+  source-shards:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/public-source-shadow-20261123'
+    name: "${{ matrix.platform }} source (${{ matrix.shard }}) / Python 3.10"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [runtime, other]
+        platform: [linux, windows]
+        include:
+          - platform: linux
+            os: ubuntu-latest
+            timeout: 60
+          - platform: windows
+            os: windows-latest
+            timeout: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: controller
+          persist-credentials: false
+      # Shadow validation is intentionally limited to this already public
+      # baseline. No PAT, product secret, artifact, or result writeback.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: 82a1aa6d8499ee203ea8e452c2f016db37ea7b3f
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Verify product SHA
+        shell: python
+        run: |
+          from subprocess import PIPE, run
+          import sys
+          result = run(["git", "-C", "product", "rev-parse", "HEAD"], stdout=PIPE, stderr=PIPE, text=True)
+          sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
+                   "82a1aa6d8499ee203ea8e452c2f016db37ea7b3f" else 1)
+      - name: Run original source checks and fixed shard
+        run: python controller/scripts/source_recipe.py product ${{ matrix.platform }} ${{ matrix.shard }}
