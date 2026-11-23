@@ -1,0 +1,64 @@
+name: Public product Web shadow
+on:
+  push:
+    branches: [dot/public-web-shadow-20261123]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/public-web-shadow-20261123'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: 'Linux Web', os: ubuntu-latest, job: web-panel, event: push, timeout: 15}
+          - {name: 'Windows Web automatic', os: windows-latest, job: web-panel, event: push, timeout: 15}
+          - {name: 'Windows Web full manual profile', os: windows-latest, job: web-panel, event: workflow_dispatch, timeout: 15}
+          - {name: 'Windows owning Runtime', os: windows-latest, job: product-runtime, event: push, timeout: 20}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: cc68df54803489356fabd158293c99c0c1e2ef85
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify product SHA
+        shell: python
+        run: |
+          import subprocess
+          import sys
+          result = subprocess.run(["git", "-C", "product", "rev-parse", "HEAD"], capture_output=True, text=True)
+          sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
+                   "cc68df54803489356fabd158293c99c0c1e2ef85" else 1)
+      - name: Run original Web or owning Runtime recipe
+        env:
+          EMO_WEB_MODE: ${{ matrix.job }}
+          EMO_WEB_OS: ${{ matrix.os }}
+          EMO_SOURCE_EVENT: ${{ matrix.event }}
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          product = Path("product").resolve()
+          harness = product / "scripts/ci_migration/web/run_web_recipe.py"
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "emo-web-private"
+          result = subprocess.run([sys.executable, str(harness), "--job", os.environ["EMO_WEB_MODE"],
+                                   "--platform", os.environ["EMO_WEB_OS"], "--source-event", os.environ["EMO_SOURCE_EVENT"],
+                                   "--product", str(product), "--evidence", str(evidence)],
+                                  capture_output=True, text=True)
+          print("web_recipe=" + ("success" if result.returncode == 0 else "failure"))
+          sys.exit(result.returncode != 0)
