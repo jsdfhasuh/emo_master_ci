@@ -1,0 +1,62 @@
+name: GitHub credential read-only preflight
+
+on:
+  push:
+    branches: [dot/pat-preflight-20261123]
+
+permissions: {}
+
+jobs:
+  verify:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/pat-preflight-20261123'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check authentication and repository metadata access
+        env:
+          CI_PREFLIGHT_CREDENTIAL: ${{ secrets.EMO_CI_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import http.client
+          import os
+
+          credential = os.environ.pop("CI_PREFLIGHT_CREDENTIAL", "")
+          if not credential:
+              print("credential_configured=no")
+              raise SystemExit(1)
+
+          def http_status(path):
+              client = http.client.HTTPSConnection("api.github.com", timeout=10)
+              try:
+                  client.request("GET", path, headers={
+                      "Authorization": "Bearer " + credential,
+                      "Accept": "application/vnd.github+json",
+                      "User-Agent": "emo-ci-metadata-preflight",
+                      "X-GitHub-Api-Version": "2026-03-10",
+                  })
+                  return client.getresponse().status
+              except (OSError, ValueError, http.client.HTTPException):
+                  return None
+              finally:
+                  client.close()
+
+          authenticated = http_status("/user") == 200
+          print("github_authentication=" + ("pass" if authenticated else "fail"))
+          if not authenticated:
+              raise SystemExit(1)
+
+          checks = (
+              ("product_repository_metadata", "/repos/jsdfhasuh/emo_master"),
+              ("public_repository_metadata", "/repos/jsdfhasuh/emo_master_ci"),
+              ("product_secret_metadata", "/repos/jsdfhasuh/emo_master/actions/secrets/EMO_CI_TOKEN"),
+              ("public_secret_metadata", "/repos/jsdfhasuh/emo_master_ci/actions/secrets/EMO_CI_TOKEN"),
+          )
+          statuses = []
+          for name, path in checks:
+              status = http_status(path)
+              statuses.append(status)
+              print(f"{name}={'pass' if status == 200 else 'not_verified'}")
+          # Metadata reachability is not evidence of write permissions or of
+          # future private checkout. A Secrets read is a scope signal only.
+          raise SystemExit(0 if statuses[:2] == [200, 200] else 1)
+          PY
