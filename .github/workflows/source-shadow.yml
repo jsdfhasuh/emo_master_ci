@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 82a1aa6d8499ee203ea8e452c2f016db37ea7b3f
+          ref: d0b2ba5150539a7076a7a693f6bcfbae86db5620
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -47,6 +47,6 @@ jobs:
           import sys
           result = run(["git", "-C", "product", "rev-parse", "HEAD"], stdout=PIPE, stderr=PIPE, text=True)
           sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
-                   "82a1aa6d8499ee203ea8e452c2f016db37ea7b3f" else 1)
+                   "d0b2ba5150539a7076a7a693f6bcfbae86db5620" else 1)
       - name: Run original source checks and fixed shard
         run: python controller/scripts/source_recipe.py product ${{ matrix.platform }} ${{ matrix.shard }}
