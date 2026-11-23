@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: baf307c1820185f959d3202180d1f1c66eb4306e
+          ref: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
           path: product
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -99,7 +99,7 @@ jobs:
           args = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
                   str(source / "scripts/ci_migration/windows/windows-build-validate.ps1"),
                   "-Target", os.environ["BUILD_TARGET"], "-SourceRoot", str(source), "-PackagerRoot", str(packager),
-                  "-SourceSha", "baf307c1820185f959d3202180d1f1c66eb4306e", "-ReleaseTag", "v" + version,
+                  "-SourceSha", "2e46f24b88f8624937b4465ddaf4490cbe831fb7", "-ReleaseTag", "v" + version,
                   "-WorkflowSha", os.environ["EXPECTED_WORKFLOW_SHA"], "-OutputDirectory", str(output)]
           with (evidence / "product-build.log").open("xb") as log:
               result = subprocess.run(args, env=safe_env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
@@ -133,7 +133,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: 'baf307c1820185f959d3202180d1f1c66eb4306e'
+          EMO_EVIDENCE_SOURCE: '2e46f24b88f8624937b4465ddaf4490cbe831fb7'
           EMO_EVIDENCE_PACKAGER: '91766f6d18ca9a333f64cf1c6030202457ec4a8a'
           EMO_EVIDENCE_JOB: '${{ matrix.target }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
