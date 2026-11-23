@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 3cfb1feea46170fe9da2967790924ac3230c1606
+          ref: e78d14692dd4558c7391e05f6b6e7eee523c4f22
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -48,7 +48,7 @@ jobs:
           import sys
           result = run(["git", "-C", "product", "rev-parse", "HEAD"], stdout=PIPE, stderr=PIPE, text=True)
           sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
-                   "3cfb1feea46170fe9da2967790924ac3230c1606" else 1)
+                   "e78d14692dd4558c7391e05f6b6e7eee523c4f22" else 1)
       - name: Run original source checks and fixed shard
         id: workload
         shell: python
@@ -70,7 +70,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: '3cfb1feea46170fe9da2967790924ac3230c1606'
+          EMO_EVIDENCE_SOURCE: 'e78d14692dd4558c7391e05f6b6e7eee523c4f22'
           EMO_EVIDENCE_PACKAGER: ''
           EMO_EVIDENCE_JOB: '${{ matrix.platform }}-${{ matrix.shard }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
