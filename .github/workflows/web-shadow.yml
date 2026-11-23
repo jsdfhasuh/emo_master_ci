@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: cc68df54803489356fabd158293c99c0c1e2ef85
+          ref: f370753e507ff41557bd36ba7af9d36d9a6969cc
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -41,7 +41,7 @@ jobs:
           import sys
           result = subprocess.run(["git", "-C", "product", "rev-parse", "HEAD"], capture_output=True, text=True)
           sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
-                   "cc68df54803489356fabd158293c99c0c1e2ef85" else 1)
+                   "f370753e507ff41557bd36ba7af9d36d9a6969cc" else 1)
       - name: Run original Web or owning Runtime recipe
         env:
           EMO_WEB_MODE: ${{ matrix.job }}
@@ -50,6 +50,7 @@ jobs:
         shell: python
         run: |
           import os
+          import re
           from pathlib import Path
           import subprocess
           import sys
@@ -60,5 +61,8 @@ jobs:
                                    "--platform", os.environ["EMO_WEB_OS"], "--source-event", os.environ["EMO_SOURCE_EVENT"],
                                    "--product", str(product), "--evidence", str(evidence)],
                                   capture_output=True, text=True)
+          outcome = result.stdout.strip()
+          if result.returncode and re.fullmatch(r"WEB_RECIPE_FAILURE:(?:(?:shell-unavailable|shell-launch|command-failed):[0-9]{2}|setup)", outcome):
+              print(outcome)
           print("web_recipe=" + ("success" if result.returncode == 0 else "failure"))
           sys.exit(result.returncode != 0)
