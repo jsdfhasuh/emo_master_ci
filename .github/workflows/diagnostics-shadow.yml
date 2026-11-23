@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: cc68df54803489356fabd158293c99c0c1e2ef85
+          ref: 9edd522e0378adb91ee1a50c349b3fcdd7cd3fbc
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -43,23 +43,58 @@ jobs:
           import subprocess
           import sys
 
+          STAGES = {
+              "display-session-contract": ("setup", "identity", "contract", "evidence_present"),
+              "runtime-a18-diagnostics": ("setup", "identity", "observed_tests", "evidence_validation", "wal_control"),
+              "runtime-capture-diagnostics": ("setup", "resource_probe", "observed_tests", "evidence_validation"),
+              "runtime-credit-diagnostics": ("setup", "resource_probe", "credit_control", "evidence_validation"),
+              "runtime-sqlite-append-controls": ("setup", "append_controls", "evidence_validation"),
+              "runtime-sqlite-failure-diagnostics": ("setup", "resource_probe", "observed_tests", "evidence_validation", "durable_controls", "controls_validation"),
+              "runtime-stop-diagnostics": ("setup", "resource_probe", "observed_tests", "native_evidence", "evidence_validation"),
+          }
+          ENUMS = ("success", "failure", "skipped")
+
+          def summary(suite, status_file, process_code):
+              try:
+                  with status_file.open("rb") as stream:
+                      payload = stream.read(8193)
+                  if len(payload) > 8192:
+                      raise ValueError
+                  data = json.loads(payload)
+                  stages = STAGES[suite]
+                  status, rows = data["status"], data["steps"]
+                  if status not in ENUMS or type(rows) is not list:
+                      raise ValueError
+                  if status == "skipped" and not rows and process_code == 0 and suite == "runtime-credit-diagnostics":
+                      return ("diagnostic_worker=skipped",), False
+                  if len(stages) != len(rows):
+                      raise ValueError
+                  outcomes = []
+                  for ordinal, (row, stage) in enumerate(zip(rows, stages), 3):
+                      outcome = row["status"]
+                      if row["ordinal"] != ordinal or outcome not in ENUMS:
+                          raise ValueError
+                      outcomes.append(outcome)
+                  successful = process_code == 0 and status == "success" and "failure" not in outcomes
+                  failed = process_code == 1 and status == "failure" and "failure" in outcomes
+                  if not (successful or failed):
+                      raise ValueError
+                  lines = tuple(stage + "=" + ENUMS[ENUMS.index(outcome)] for stage, outcome in zip(stages, outcomes))
+                  return (*lines, "diagnostic_worker=" + ("success" if successful else "failure")), successful
+              except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+                  return ("diagnostic_worker=report_unavailable",), False
+
           product = Path("product").resolve()
           evidence = Path(os.environ["RUNNER_TEMP"]) / "emo-diagnostics-private"
           result = subprocess.run([sys.executable, str(product / "scripts/ci_migration/diagnostics/run.py"),
                                    "--suite", os.environ["EMO_DIAGNOSTIC"],
                                    "--product-root", str(product),
                                    "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
-                                   "--source-sha", "cc68df54803489356fabd158293c99c0c1e2ef85",
+                                   "--source-sha", "9edd522e0378adb91ee1a50c349b3fcdd7cd3fbc",
                                    "--private-evidence-dir", str(evidence),
                                    "--run-id", os.environ["GITHUB_RUN_ID"],
                                    "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-          outcome = "failure"
-          try:
-              status = json.loads((evidence / "status.json").read_bytes())
-              if result.returncode == 0 and status.get("status") == "success":
-                  outcome = "success"
-          except (OSError, ValueError, AttributeError):
-              pass
-          print("diagnostic_worker=" + outcome)
-          sys.exit(outcome != "success")
+          lines, ok = summary(os.environ["EMO_DIAGNOSTIC"], evidence / "status.json", result.returncode)
+          print(*lines, sep="\n")
+          sys.exit(not ok)
