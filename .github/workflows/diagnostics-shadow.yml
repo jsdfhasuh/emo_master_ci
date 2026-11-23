@@ -1,0 +1,65 @@
+name: Public product diagnostics shadow
+on:
+  push:
+    branches: [dot/public-diagnostics-shadow-20261123]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/public-diagnostics-shadow-20261123'
+    name: ${{ matrix.suite }} / Windows Python 3.10
+    runs-on: windows-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: display-session-contract, timeout: 15}
+          - {suite: runtime-a18-diagnostics, timeout: 30}
+          - {suite: runtime-capture-diagnostics, timeout: 30}
+          - {suite: runtime-sqlite-append-controls, timeout: 10}
+          - {suite: runtime-sqlite-failure-diagnostics, timeout: 30}
+          - {suite: runtime-stop-diagnostics, timeout: 30}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: cc68df54803489356fabd158293c99c0c1e2ef85
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Run fixed diagnostic recipe with no published evidence
+        env:
+          EMO_DIAGNOSTIC: ${{ matrix.suite }}
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          product = Path("product").resolve()
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "emo-diagnostics-private"
+          result = subprocess.run([sys.executable, str(product / "scripts/ci_migration/diagnostics/run.py"),
+                                   "--suite", os.environ["EMO_DIAGNOSTIC"],
+                                   "--product-root", str(product),
+                                   "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
+                                   "--source-sha", "cc68df54803489356fabd158293c99c0c1e2ef85",
+                                   "--private-evidence-dir", str(evidence),
+                                   "--run-id", os.environ["GITHUB_RUN_ID"],
+                                   "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          outcome = "failure"
+          try:
+              status = json.loads((evidence / "status.json").read_bytes())
+              if result.returncode == 0 and status.get("status") == "success":
+                  outcome = "success"
+          except (OSError, ValueError, AttributeError):
+              pass
+          print("diagnostic_worker=" + outcome)
+          sys.exit(outcome != "success")
