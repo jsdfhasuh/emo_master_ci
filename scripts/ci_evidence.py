@@ -17,7 +17,12 @@ FILES = {
                "qt.stdout.log", "qt.stderr.log", "checks.stdout.log", "checks.stderr.log",
                "ci-results.xml", "ci-shard.json", "ci-failures.log", "two-job-observation.json", "status.json"},
     "package": {"product-build.log", "phase.txt", "source-regression.log", "source-regression.xml"},
-    "diagnostics": {"stage-report.json", "junit.xml", *(f"step-{i:02}.log" for i in range(3, 9))},
+    "diagnostics": {"stage-report.json", "junit.xml", "observed-junit.xml", "wal-control-junit.xml",
+                    "runtime-a18-phase-diagnostics.json", "runtime-capture-diagnostics.json",
+                    "export-credit-public.json", "sqlite-append-controls-summary.json",
+                    "runtime-sqlite-failure-diagnostics.json", "runtime-sqlite-controls-summary.json",
+                    "runtime-stop-diagnostics.json", "runtime-native-thread-origins.json",
+                    *(f"step-{i:02}.log" for i in range(3, 9))},
     "probe": {"fixture.log"},
 }
 MAX_MEMBER = 24 * MIB
@@ -94,6 +99,8 @@ def archive(age, kind, source, output, recipient):
                         raise ValueError("oversized evidence")
                     meta["files"][name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
                     add(name, data)
+                if kind == "diagnostics" and "stage-report.json" not in meta["files"]:
+                    raise ValueError("missing diagnostic stage report")
                 add("manifest.json", json.dumps(meta, sort_keys=True).encode("ascii"))
             if child.wait(timeout=90):
                 raise ValueError("age rejected encryption")

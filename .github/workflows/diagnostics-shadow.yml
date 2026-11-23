@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: e78d14692dd4558c7391e05f6b6e7eee523c4f22
+          ref: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -48,6 +48,8 @@ jobs:
           from pathlib import Path
           import subprocess
           import sys
+          import stat
+          import xml.etree.ElementTree as ET
 
           STAGES = {
               "display-session-contract": ("setup", "identity", "contract", "evidence_present"),
@@ -97,7 +99,7 @@ jobs:
                                        "--suite", os.environ["EMO_DIAGNOSTIC"],
                                        "--product-root", str(product),
                                        "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
-                                       "--source-sha", "e78d14692dd4558c7391e05f6b6e7eee523c4f22",
+                                       "--source-sha", "2e46f24b88f8624937b4465ddaf4490cbe831fb7",
                                        "--private-evidence-dir", str(evidence),
                                        "--run-id", os.environ["GITHUB_RUN_ID"],
                                        "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
@@ -113,36 +115,86 @@ jobs:
           staging = Path(os.environ["RUNNER_TEMP"]) / "_emo_evidence" / "diagnostics"
           staging.mkdir(parents=True, exist_ok=False)
           report = {key: value for key, value in (line.split("=", 1) for line in lines)}
-          (staging / "stage-report.json").write_text(json.dumps(report, sort_keys=True) + "\n", encoding="utf-8")
+          evidence_ok = True
+          mib = 1024 * 1024
 
-          def copy_bounded(source, dest, cap, *, log=False):
+          def copy_bounded(source, name, cap, *, required=False, log=False):
               try:
-                  if source.is_symlink() or not source.is_file():
-                      return
+                  initial = source.lstat()
+                  if not stat.S_ISREG(initial.st_mode) or initial.st_nlink != 1 or getattr(initial, "st_file_attributes", 0) & 0x400:
+                      return False
                   with source.open("rb") as stream:
-                      stream.seek(0, os.SEEK_END)
-                      length = stream.tell()
-                      if not log and length > cap:
-                          return
-                      omitted = max(0, length - cap)
-                      if omitted:
-                          stream.seek(omitted, os.SEEK_SET)
-                      else:
-                          stream.seek(0, os.SEEK_SET)
-                      data = stream.read(cap)
-                  if omitted:
+                      current = os.fstat(stream.fileno())
+                      if not os.path.samestat(initial, current):
+                          return False
+                      length = current.st_size
+                      if not log and not 0 < length <= cap:
+                          return False
                       marker = b"[leading bytes omitted]\n"
-                      data = marker + data[-(cap - len(marker)):]
-                  dest.write_bytes(data)
-              except OSError:
-                  pass
+                      offset = max(0, length - cap + len(marker)) if log and length > cap else 0
+                      stream.seek(offset)
+                      data = stream.read(cap + 1)
+                      if len(data) != length - offset:
+                          return False
+                  if offset:
+                      data = marker + data
+                  elif not log and name.endswith(".json"):
+                      if not isinstance(json.loads(data), dict):
+                          return False
+                  elif not log and name.endswith(".xml"):
+                      if ET.fromstring(data).tag not in {"testsuite", "testsuites"}:
+                          return False
+                  (staging / name).write_bytes(data)
+                  return True
+              except FileNotFoundError:
+                  return not required
+              except (OSError, ValueError, ET.ParseError):
+                  return False
 
-          for ordinal in range(3, 3 + len(STAGES[suite])):
+          for ordinal, stage in enumerate(STAGES[suite], 3):
               name = f"step-{ordinal:02d}.log"
-              copy_bounded(evidence / name, staging / name, 256 * 1024, log=True)
+              evidence_ok &= copy_bounded(evidence / name, name, 256 * 1024, log=True,
+                                          required=report.get(stage) in ("success", "failure") and stage != "evidence_present")
+
+          temp = evidence / "temp"
+          def attempted(stage):
+              return report.get(stage) in ("success", "failure")
+          def passed(stage):
+              return report.get(stage) == "success"
+
           if suite == "display-session-contract":
-              copy_bounded(product / "display-evidence" / "junit.xml",
-                           staging / "junit.xml", 4 * 1024 * 1024)
+              evidence_ok &= copy_bounded(product / "display-evidence" / "junit.xml",
+                                          "junit.xml", 12 * mib, required=attempted("contract"))
+          if "observed_tests" in STAGES[suite]:
+              evidence_ok &= copy_bounded(temp / "observed-junit.xml", "observed-junit.xml",
+                                          12 * mib, required=attempted("observed_tests"))
+          if suite == "runtime-a18-diagnostics":
+              evidence_ok &= copy_bounded(temp / "wal-control-junit.xml", "wal-control-junit.xml",
+                                          12 * mib, required=attempted("wal_control"))
+
+          specs = {
+              "runtime-a18-diagnostics": (
+                  ("runtime-a18-phase-diagnostics.json", "runtime-a18-phase-diagnostics.json", 32 * 1024, False),),
+              "runtime-capture-diagnostics": (
+                  ("runtime-capture-diagnostics.json", "runtime-capture-diagnostics.json", mib, passed("evidence_validation")),),
+              "runtime-credit-diagnostics": (
+                  ("export-credit-public.json", "export-credit-public.json", mib, passed("evidence_validation")),),
+              "runtime-sqlite-append-controls": (
+                  ("sqlite-append-control-evidence/summary.json", "sqlite-append-controls-summary.json", 64 * 1024, passed("evidence_validation")),),
+              "runtime-sqlite-failure-diagnostics": (
+                  ("runtime-sqlite-failure-diagnostics.json", "runtime-sqlite-failure-diagnostics.json", mib, False),
+                  ("runtime-sqlite-control-evidence/summary.json", "runtime-sqlite-controls-summary.json", mib, passed("controls_validation"))),
+              "runtime-stop-diagnostics": (
+                  ("runtime-stop-diagnostics.json", "runtime-stop-diagnostics.json", mib, passed("evidence_validation")),
+                  ("runtime-native-thread-origins.json", "runtime-native-thread-origins.json", 32 * 1024, False)),
+          }
+          for source, name, cap, required in specs.get(suite, ()):
+              evidence_ok &= copy_bounded(temp / source, name, cap, required=required)
+
+          report["evidence_capture"] = "success" if evidence_ok else "failure"
+          (staging / "stage-report.json").write_text(json.dumps(report, sort_keys=True) + "\n", encoding="utf-8")
+          print("evidence_capture=" + report["evidence_capture"])
+          ok = ok and evidence_ok
           print(*lines, sep="\n")
           sys.exit(not ok)
       - name: Encrypt retained evidence even when the workload fails
@@ -151,7 +203,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: 'e78d14692dd4558c7391e05f6b6e7eee523c4f22'
+          EMO_EVIDENCE_SOURCE: '2e46f24b88f8624937b4465ddaf4490cbe831fb7'
           EMO_EVIDENCE_PACKAGER: ''
           EMO_EVIDENCE_JOB: '${{ matrix.suite }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
