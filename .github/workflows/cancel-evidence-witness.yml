@@ -1,0 +1,46 @@
+name: Hosted cancellation evidence witness
+on:
+  push:
+    branches: [dot/cancel-evidence-witness-20261124]
+permissions:
+  contents: read
+concurrency:
+  group: dot-cancel-evidence-witness-20261124
+  cancel-in-progress: true
+jobs:
+  witness:
+    if: github.repository_id == '1468905732'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Install pinned age before cancellable workload
+        run: python scripts/install_age.py "$RUNNER_TEMP/cancel-witness-age"
+      - name: Create and encrypt a pre-cancellation checkpoint
+        env:
+          CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
+          EMO_EVIDENCE_SOURCE: ${{ github.sha }}
+          EMO_EVIDENCE_PACKAGER: ''
+          EMO_EVIDENCE_JOB: cancellation-checkpoint
+          EMO_EVIDENCE_OUTCOME: success
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/cancel-witness-staging"
+          printf 'synthetic_checkpoint=present\n' > "$RUNNER_TEMP/cancel-witness-staging/fixture.log"
+          python scripts/ci_evidence.py probe "$RUNNER_TEMP/cancel-witness-staging" \
+            "$RUNNER_TEMP/cancel-witness-output/evidence.tar.age" "$RUNNER_TEMP/cancel-witness-age/age"
+      - name: Upload checkpoint ciphertext only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-probe-cancellation-checkpoint-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cancel-witness-output/evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Await deliberate superseding heartbeat
+        if: hashFiles('.github/cancel-witness-complete.txt') == ''
+        shell: bash
+        run: sleep 420
