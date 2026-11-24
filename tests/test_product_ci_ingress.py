@@ -6,6 +6,10 @@ from zipfile import ZipFile
 
 from scripts.product_ci_ingress import DISPATCHER_PATH, PRODUCT, PRODUCT_ID, Invalid, acquire
 
+# These fixture paths are independent of the implementation constant:
+# upstream product PR #23 owns the first; the public worker PR #12 owns the second.
+PRODUCT_WORKFLOW = ".github/workflows/public-ci-dispatch.yml"
+PUBLIC_WORKFLOW = ".github/workflows/product-ci-dispatch.yml"
 HEAD = "1" * 40
 BLOB = "2" * 40
 WORKER = "3" * 40
@@ -17,6 +21,10 @@ class Fake:
         self.downloaded = False
         self.redirect = REDIRECT
         self.expired = False
+        self.run_path = self.definition_path = PRODUCT_WORKFLOW
+        self.blob = BLOB
+        self.workflow_id = 10
+        self.artifact_read = False
         self.request = dict(schema_version=1, source_repository_id=PRODUCT_ID, request_id="5-2",
                             ci_workflow_sha=WORKER, source_head_sha=HEAD, check_sha=HEAD,
                             source_event_name="push", source_ref="refs/heads/main", execution_sha=HEAD)
@@ -30,13 +38,14 @@ class Fake:
         identity = {"id": PRODUCT_ID}
         path = url.removeprefix(PRODUCT)
         if path == "/actions/runs/5":
-            return 200, json.dumps(dict(id=5, workflow_id=10, path=DISPATCHER_PATH, repository=identity,
+            return 200, json.dumps(dict(id=5, workflow_id=self.workflow_id, path=self.run_path, repository=identity,
                  head_repository=identity, event="push", head_branch="main", head_sha=HEAD, run_attempt=2))
         if path == "/git/ref/heads/main":
             return 200, json.dumps({"object": {"sha": HEAD}})
-        if path == f"/contents/{DISPATCHER_PATH}?ref={HEAD}":
-            return 200, json.dumps(dict(path=DISPATCHER_PATH, type="file", sha=BLOB))
+        if path == f"/contents/{PRODUCT_WORKFLOW}?ref={HEAD}":
+            return 200, json.dumps(dict(path=self.definition_path, type="file", sha=self.blob))
         if path == "/actions/artifacts/6":
+            self.artifact_read = True
             buf = io.BytesIO()
             with ZipFile(buf, "w") as arc:
                 arc.writestr("request.json", json.dumps(self.request))
@@ -58,6 +67,19 @@ class IngressTest(unittest.TestCase):
         fake = Fake()
         self.assertEqual(self.run_ingress(fake)["execution_sha"], HEAD)
         self.assertTrue(fake.downloaded)
+
+    def test_fixed_product_filename_is_not_public_caller_filename(self):
+        self.assertEqual(DISPATCHER_PATH, PRODUCT_WORKFLOW)
+        self.assertNotEqual(DISPATCHER_PATH, PUBLIC_WORKFLOW)
+        for updates in ({"run_path": PUBLIC_WORKFLOW}, {"definition_path": PUBLIC_WORKFLOW},
+                        {"workflow_id": 11}, {"blob": "9" * 40}):
+            with self.subTest(updates=updates):
+                fake = Fake()
+                vars(fake).update(updates)
+                with self.assertRaises(Invalid):
+                    self.run_ingress(fake)
+                self.assertFalse(fake.artifact_read)
+                self.assertFalse(fake.downloaded)
 
     def test_disallowed_redirect_and_expired_artifact_do_not_download(self):
         for updates in ({"redirect": "https://evil.example/a"}, {"expired": True}):
@@ -91,7 +113,7 @@ class TargetFake(Fake):
         target = {"sha": self.BASE, "ref": "main", "repo": identity}
         path = url.removeprefix(PRODUCT)
         values = {
-            "/actions/runs/5": dict(id=5, workflow_id=10, path=DISPATCHER_PATH, repository=identity,
+            "/actions/runs/5": dict(id=5, workflow_id=self.workflow_id, path=self.run_path, repository=identity,
                                      head_repository=identity, event=self.event, head_branch="main",
                                      head_sha=HEAD if self.wrong_head else self.BASE, run_attempt=2,
                                      pull_requests=[] if self.missing_link else [
@@ -100,7 +122,7 @@ class TargetFake(Fake):
                               mergeable=True, merge_commit_sha=self.MERGE),
             "/git/ref/pull/42/merge": {"object": {"sha": self.MERGE}},
             f"/git/commits/{self.MERGE}": {"parents": [{"sha": self.BASE}, {"sha": HEAD}]},
-            f"/contents/{DISPATCHER_PATH}?ref={self.BASE}": {"path": DISPATCHER_PATH, "type": "file", "sha": BLOB},
+            f"/contents/{PRODUCT_WORKFLOW}?ref={self.BASE}": {"path": self.definition_path, "type": "file", "sha": self.blob},
         }
         if path in values:
             assert token == "test_only"

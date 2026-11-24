@@ -13,7 +13,8 @@ import zipfile
 
 PRODUCT = "https://api.github.com/repos/jsdfhasuh/emo_master"
 PRODUCT_ID = 1343796337
-DISPATCHER_PATH = ".github/workflows/product-ci-dispatch.yml"
+# Product-side workflow path, not the public caller with the mirrored word order.
+DISPATCHER_PATH = ".github/workflows/public-ci-dispatch.yml"
 SHA = re.compile(r"[a-f0-9]{40}")
 BLOB = re.compile(r"(?:[a-z0-9-]+\.)?(?:blob\.core\.windows\.net|actions\.githubusercontent\.com)")
 MAX = 256 * 1024
