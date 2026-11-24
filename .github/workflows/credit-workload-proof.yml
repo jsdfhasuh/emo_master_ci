@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 1e74f3a3c94d13e542a9780e725e845196e9d924
+          ref: 5ade74707331f1f95df81615a7cfec43a7afccfd
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -104,7 +104,7 @@ jobs:
           assert sys.platform == "win32" and sys.version_info[:2] == (3, 10)
           product, evidence = map(Path, sys.argv[1:3])
           digest, run_id, run_attempt = sys.argv[3:]
-          assert digest == "1e74f3a3c94d13e542a9780e725e845196e9d924"
+          assert digest == "5ade74707331f1f95df81615a7cfec43a7afccfd"
           assert all(re.fullmatch(r"[0-9]{1,24}", value) for value in (run_id, run_attempt))
           assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip() == digest
           sys.path.insert(0, str(product / "scripts/ci_migration/diagnostics"))
@@ -113,14 +113,19 @@ jobs:
           assert original["job_if"] == f"github.ref == '{ARCH_REF}'"
           assert original["timeout_minutes"] == 20 and original["env"]["QT_QPA_PLATFORM"] == "windows"
           evidence.mkdir()
-          outcome = execute({**original, "job_if": None}, "", product, evidence, digest, run_id, run_attempt)
+          # Preserve original steps; only select encrypted file transport.
+          steps = [dict(step) for step in original["steps"]]
+          needle = '--output-json "$env:RUNNER_TEMP/export-credit-public.json"'
+          report_step, = (step for step in steps if needle in step["run"])
+          report_step["run"] = report_step["run"].replace(needle, needle + " --local-file-only", 1)
+          outcome = execute({**original, "job_if": None, "steps": steps}, "", product, evidence, digest, run_id, run_attempt)
           (evidence / "status.json").write_text(json.dumps(outcome), encoding="utf-8")
           sys.exit(outcome["status"] != "success")
           """
           import textwrap
           try:
               result = subprocess.run([sys.executable, "-c", textwrap.dedent(proof), str(product), str(evidence),
-                                       "1e74f3a3c94d13e542a9780e725e845196e9d924",
+                                       "5ade74707331f1f95df81615a7cfec43a7afccfd",
                                        os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]],
                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
               process_code = result.returncode
@@ -176,7 +181,7 @@ jobs:
                                           required=report.get(stage) in ("success", "failure") and stage != "evidence_present")
 
           evidence_ok &= copy_bounded(evidence / "temp" / "export-credit-public.json",
-                                      "export-credit-public.json", mib,
+                                      "export-credit-public.json", 8 * mib,
                                       required=report.get("evidence_validation") == "success")
 
           report["proof_kind"] = "workload_only_not_route_acceptance"
@@ -192,7 +197,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: '1e74f3a3c94d13e542a9780e725e845196e9d924'
+          EMO_EVIDENCE_SOURCE: '5ade74707331f1f95df81615a7cfec43a7afccfd'
           EMO_EVIDENCE_PACKAGER: ''
           EMO_EVIDENCE_JOB: '${{ matrix.suite }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
