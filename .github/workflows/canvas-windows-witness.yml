@@ -56,7 +56,8 @@ jobs:
           product = Path("product").resolve()
           path = "tests/ui/page_designer/test_canvas_viewport.py"
           node = path + "::testManualViewSurvivesRefreshAndFitRestoresAutomaticMode"
-          targets = {"single": node, "module": path}
+          capture = "tests/runtime/presentation/test_normal_capture.py::testOriginalStartCapturesInstalledOperatorsAndProductionCounter"
+          targets = {"single": [node, capture], "module": [path, capture]}
           target = targets[os.environ["PROBE_TARGET"]]
           result = "failure"
           phase = "identity"
@@ -72,7 +73,7 @@ jobs:
               with (staging / "step-05.log").open("wb") as log:
                   rc = subprocess.run([sys.executable, "-m", "pytest", "-v", "--tb=long", "-o", "faulthandler_timeout=90",
                                        "-p", "scripts.r3_sqlite_capture_diagnostics", "--sqlite-capture-diagnostics",
-                                       str(root / "canvas-observer.json"), "--junitxml", str(staging / "observed-junit.xml"), target],
+                                       str(root / "canvas-observer.json"), "--junitxml", str(staging / "observed-junit.xml"), *target],
                                       cwd=product, stdout=log, stderr=subprocess.STDOUT, timeout=300).returncode
               result = "success" if rc == 0 else "failure"
           except subprocess.TimeoutExpired:
