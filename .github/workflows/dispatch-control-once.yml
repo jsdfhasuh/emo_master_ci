@@ -1,0 +1,21 @@
+name: Dispatch channel controller (one shot)
+on:
+  push:
+    branches: [dot/dispatch-pilot-control-20261124]
+permissions:
+  contents: read
+jobs:
+  drive:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/dispatch-pilot-control-20261124'
+    name: Verify two GitHub dispatches and non-required status round trips
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Run pinned no-release experiment
+        env:
+          EMO_CI_TOKEN: ${{ secrets.EMO_CI_TOKEN }}
+        run: python3 scripts/dispatch_pilot/run_once.py
