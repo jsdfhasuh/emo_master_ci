@@ -1,0 +1,78 @@
+name: Read-only evidence preservation probe
+on:
+  push:
+    branches: [dot/evidence-recovery-probe-20261124]
+permissions:
+  contents: read
+jobs:
+  exercise:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/evidence-recovery-probe-20261124'
+    name: Evidence / ${{ matrix.mode }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [failure, step-timeout]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Prepare pinned evidence tools before the workload
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          tool_dir = Path(os.environ["RUNNER_TEMP"]) / "_emo_age_tool"
+          subprocess.run([sys.executable, "scripts/install_age.py", str(tool_dir)], check=True)
+      - name: Exercise the fixed negative workload
+        id: workload
+        timeout-minutes: 1
+        shell: python
+        env:
+          PROBE_MODE: ${{ matrix.mode }}
+        run: |
+          import os
+          from pathlib import Path
+          import time
+          directory = Path(os.environ["RUNNER_TEMP"]) / "_emo_evidence" / "probe"
+          directory.mkdir(parents=True, exist_ok=False)
+          mode = os.environ["PROBE_MODE"]
+          (directory / "fixture.log").write_text("synthetic fixture " + mode + "\n", encoding="ascii")
+          if mode == "step-timeout":
+              time.sleep(180)
+          raise SystemExit(9)
+      - name: Seal negative workload evidence
+        id: seal
+        if: ${{ always() }}
+        shell: python
+        env:
+          CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
+          EMO_EVIDENCE_SOURCE: '2e46f24b88f8624937b4465ddaf4490cbe831fb7'
+          EMO_EVIDENCE_PACKAGER: ''
+          EMO_EVIDENCE_JOB: ${{ matrix.mode }}
+          EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          temp = Path(os.environ["RUNNER_TEMP"]).resolve()
+          subprocess.run([sys.executable, "scripts/ci_evidence.py", "probe",
+                          str(temp / "_emo_evidence" / "probe"), str(temp / "_emo_ciphertext" / "evidence.tar.age"),
+                          str(temp / "_emo_age_tool" / "age.exe")], check=True)
+      - name: Upload only the encrypted synthetic probe
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-probe-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/_emo_ciphertext/evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
