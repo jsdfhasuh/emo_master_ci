@@ -91,13 +91,20 @@ def execute(recipe, job, platform, event, product, evidence):
             script_path.write_text(script, encoding="utf-8", newline="\n")
             with (evidence / f"step-{number:02d}.log").open("xb") as log:
                 try:
-                    completed = subprocess.run(
+                    with subprocess.Popen(
                         [*shell, script_path.as_posix()], cwd=cwd, env=env,
-                        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                    )
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    ) as child:
+                        tail = bytearray()
+                        while chunk := child.stdout.read(64 * 1024):
+                            tail.extend(chunk)
+                            if len(tail) > 512 * 1024:
+                                del tail[:-512 * 1024]
+                        log.write(tail)
+                        returncode = child.wait()
                 except OSError:
                     return failure("shell-launch", number)
-            if completed.returncode != 0:
+            if returncode != 0:
                 return failure("command-failed", number)
     print("Web job completed.")
     return 0

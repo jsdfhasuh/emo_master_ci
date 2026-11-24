@@ -1,0 +1,116 @@
+name: Public Web V2 shadow
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: [".github/diagnostic-activation/web-v2.json"]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    if: >-
+      github.repository_id == '1468905732' &&
+      github.ref == 'refs/heads/dot/mainline-ci-migration-20261124' &&
+      github.event_name == 'push'
+    name: ${{ matrix.profile }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: linux-web, os: ubuntu-latest, job: web-panel, event: push, timeout: 15, job_timeout: 25}
+          - {profile: windows-web-auto, os: windows-latest, job: web-panel, event: push, timeout: 15, job_timeout: 25}
+          - {profile: windows-web-full, os: windows-latest, job: web-panel, event: workflow_dispatch, timeout: 15, job_timeout: 25}
+          - {profile: windows-owning-runtime, os: windows-latest, job: product-runtime, event: push, timeout: 20, job_timeout: 30}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: 5b08d7455b665ba1ac83f46890c83194bc92014f
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Prepare V2 tools and verify recipient
+        id: prepare
+        shell: bash
+        env:
+          WEB_V2_RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          python -m pip install PyYAML==6.0.2 --disable-pip-version-check >/dev/null 2>&1
+          python controller/scripts/seal_product_web.py --preflight
+          python controller/scripts/install_web_age.py "$RUNNER_TEMP/web-age"
+      - name: Run original Web or owning Runtime recipe
+        id: workload
+        timeout-minutes: ${{ matrix.timeout }}
+        shell: python
+        env:
+          WEB_JOB: ${{ matrix.job }}
+          WEB_PLATFORM: ${{ matrix.os }}
+          WEB_EVENT: ${{ matrix.event }}
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          import subprocess
+          import sys
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          result = subprocess.run([sys.executable, "controller/scripts/run_product_web_recipe.py",
+              "--job", os.environ["WEB_JOB"], "--platform", os.environ["WEB_PLATFORM"],
+              "--source-event", os.environ["WEB_EVENT"], "--product", "product",
+              "--evidence", str(scratch / "web-raw")], capture_output=True, text=True)
+          signal = result.stdout.strip()
+          if result.returncode and re.fullmatch(r"WEB_RECIPE_FAILURE:(?:(?:shell-unavailable|shell-launch|command-failed):[0-9]{2}|setup)", signal):
+              print(signal)
+          print("web_workload=" + ("success" if result.returncode == 0 else "failure"))
+          sys.exit(result.returncode != 0)
+      - name: Seal V2 ciphertext only
+        id: seal
+        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        shell: python
+        env:
+          WEB_PROFILE: ${{ matrix.profile }}
+          WEB_OUTCOME: ${{ steps.workload.outcome }}
+          WEB_V2_RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          scratch = Path(os.environ["RUNNER_TEMP"])
+          raw = scratch / "web-raw"
+          raw.mkdir(exist_ok=True)
+          binary = scratch / "web-age" / ("age.exe" if os.name == "nt" else "age")
+          sys.exit(subprocess.run([sys.executable, "controller/scripts/seal_product_web.py", str(raw),
+              str(scratch / "web-cipher" / "evidence.tar.age"), str(binary)]).returncode)
+      - name: Upload encrypted Web evidence
+        id: upload
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: web-v2-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/web-cipher/evidence.tar.age
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Link ciphertext
+        if: ${{ always() && steps.upload.outcome == 'success' }}
+        shell: python
+        env:
+          WEB_EVIDENCE_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("[Encrypted Web V2 evidence](" + os.environ["WEB_EVIDENCE_URL"] + ")\n")
