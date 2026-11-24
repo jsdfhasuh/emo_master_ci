@@ -1,0 +1,241 @@
+name: Public product diagnostics shadow
+on:
+  push:
+    branches:
+      - dot/public-diagnostics-a18-recovery
+      - dot/public-diagnostics-capture-recovery
+      - dot/public-diagnostics-sqlite-failure-recovery
+      - dot/public-diagnostics-stop-recovery
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    if: github.repository_id == '1468905732'
+    name: Recovery diagnostics / Windows Python 3.10
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      EMO_DIAGNOSTIC: >-
+        ${{ fromJSON('{"dot/public-diagnostics-a18-recovery":"runtime-a18-diagnostics","dot/public-diagnostics-capture-recovery":"runtime-capture-diagnostics","dot/public-diagnostics-sqlite-failure-recovery":"runtime-sqlite-failure-diagnostics","dot/public-diagnostics-stop-recovery":"runtime-stop-diagnostics"}')[github.ref_name] }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: 50a49af989afb6ca101cad4e4e3314d9cf50e769
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Install fixed age before diagnostic workload
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          root = Path(os.environ["RUNNER_TEMP"]).resolve()
+          subprocess.run([sys.executable, "controller/scripts/install_age.py", str(root / "_emo_age_tool")], check=True)
+      - name: Run fixed diagnostics and stage bounded evidence for encryption
+        id: workload
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import stat
+          import xml.etree.ElementTree as ET
+
+          STAGES = {
+              "display-session-contract": ("setup", "identity", "contract", "evidence_present"),
+              "runtime-a18-diagnostics": ("setup", "identity", "observed_tests", "evidence_validation", "wal_control"),
+              "runtime-capture-diagnostics": ("setup", "resource_probe", "observed_tests", "evidence_validation"),
+              "runtime-credit-diagnostics": ("setup", "resource_probe", "credit_control", "evidence_validation"),
+              "runtime-sqlite-append-controls": ("setup", "append_controls", "evidence_validation"),
+              "runtime-sqlite-failure-diagnostics": ("setup", "resource_probe", "observed_tests", "evidence_validation", "durable_controls", "controls_validation"),
+              "runtime-stop-diagnostics": ("setup", "resource_probe", "observed_tests", "native_evidence", "evidence_validation"),
+          }
+          ENUMS = ("success", "failure", "skipped")
+
+          def summary(suite, status_file, process_code):
+              try:
+                  with status_file.open("rb") as stream:
+                      payload = stream.read(8193)
+                  if len(payload) > 8192:
+                      raise ValueError
+                  data = json.loads(payload)
+                  stages = STAGES[suite]
+                  status, rows = data["status"], data["steps"]
+                  if status not in ENUMS or type(rows) is not list:
+                      raise ValueError
+                  if status == "skipped" and not rows and process_code == 0 and suite == "runtime-credit-diagnostics":
+                      return ("diagnostic_worker=skipped",), False
+                  if len(stages) != len(rows):
+                      raise ValueError
+                  outcomes = []
+                  for ordinal, (row, stage) in enumerate(zip(rows, stages), 3):
+                      outcome = row["status"]
+                      if row["ordinal"] != ordinal or outcome not in ENUMS:
+                          raise ValueError
+                      timed_out = row.get("timed_out", False)
+                      if type(timed_out) is not bool or (timed_out and outcome != "failure"):
+                          raise ValueError
+                      outcomes.append(outcome)
+                  successful = process_code == 0 and status == "success" and "failure" not in outcomes
+                  failed = process_code == 1 and status == "failure" and "failure" in outcomes
+                  if not (successful or failed):
+                      raise ValueError
+                  lines = tuple(stage + "=" + ENUMS[ENUMS.index(outcome)] for stage, outcome in zip(stages, outcomes))
+                  timeout_lines = tuple(stage + "_budget=expired" for row, stage in zip(rows, stages)
+                                        if row.get("timed_out"))
+                  return (*lines, *timeout_lines, "diagnostic_worker=" + ("success" if successful else "failure")), successful
+              except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+                  return ("diagnostic_worker=report_unavailable",), False
+
+          product = Path("product").resolve()
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "emo-diagnostics-private"
+          try:
+              result = subprocess.run([sys.executable, str(product / "scripts/ci_migration/diagnostics/run.py"),
+                                       "--suite", os.environ["EMO_DIAGNOSTIC"],
+                                       "--product-root", str(product),
+                                       "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
+                                       "--source-sha", "50a49af989afb6ca101cad4e4e3314d9cf50e769",
+                                       "--private-evidence-dir", str(evidence),
+                                       "--run-id", os.environ["GITHUB_RUN_ID"],
+                                       "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              process_code = result.returncode
+          except OSError:
+              process_code = 2
+          suite = os.environ["EMO_DIAGNOSTIC"]
+          lines, ok = summary(suite, evidence / "status.json", process_code)
+
+          # This directory is consumed by the separate encryption step. Never
+          # upload the original evidence or unchecked files from the product.
+          staging = Path(os.environ["RUNNER_TEMP"]) / "_emo_evidence" / "diagnostics"
+          staging.mkdir(parents=True, exist_ok=False)
+          report = {key: value for key, value in (line.split("=", 1) for line in lines)}
+          evidence_ok = True
+          mib = 1024 * 1024
+
+          def copy_bounded(source, name, cap, *, required=False, log=False):
+              try:
+                  initial = source.lstat()
+                  if not stat.S_ISREG(initial.st_mode) or initial.st_nlink != 1 or getattr(initial, "st_file_attributes", 0) & 0x400:
+                      return False
+                  with source.open("rb") as stream:
+                      current = os.fstat(stream.fileno())
+                      if not os.path.samestat(initial, current):
+                          return False
+                      length = current.st_size
+                      if not log and not 0 < length <= cap:
+                          return False
+                      marker = b"[leading bytes omitted]\n"
+                      offset = max(0, length - cap + len(marker)) if log and length > cap else 0
+                      stream.seek(offset)
+                      data = stream.read(cap + 1)
+                      if len(data) != length - offset:
+                          return False
+                  if offset:
+                      data = marker + data
+                  elif not log and name.endswith(".json"):
+                      if not isinstance(json.loads(data), dict):
+                          return False
+                  elif not log and name.endswith(".xml"):
+                      if ET.fromstring(data).tag not in {"testsuite", "testsuites"}:
+                          return False
+                  (staging / name).write_bytes(data)
+                  return True
+              except FileNotFoundError:
+                  return not required
+              except (OSError, ValueError, ET.ParseError):
+                  return False
+
+          for ordinal, stage in enumerate(STAGES[suite], 3):
+              name = f"step-{ordinal:02d}.log"
+              evidence_ok &= copy_bounded(evidence / name, name, 256 * 1024, log=True,
+                                          required=report.get(stage) in ("success", "failure") and stage != "evidence_present")
+
+          temp = evidence / "temp"
+          def attempted(stage):
+              return report.get(stage) in ("success", "failure")
+          def passed(stage):
+              return report.get(stage) == "success"
+
+          if suite == "display-session-contract":
+              evidence_ok &= copy_bounded(product / "display-evidence" / "junit.xml",
+                                          "junit.xml", 12 * mib, required=attempted("contract"))
+          if "observed_tests" in STAGES[suite]:
+              evidence_ok &= copy_bounded(temp / "observed-junit.xml", "observed-junit.xml",
+                                          12 * mib, required=attempted("observed_tests") and report.get("observed_tests_budget") != "expired")
+          if suite == "runtime-a18-diagnostics":
+              evidence_ok &= copy_bounded(temp / "wal-control-junit.xml", "wal-control-junit.xml",
+                                          12 * mib, required=attempted("wal_control"))
+
+          specs = {
+              "runtime-a18-diagnostics": (
+                  ("runtime-a18-phase-diagnostics.json", "runtime-a18-phase-diagnostics.json", 32 * 1024, False),),
+              "runtime-capture-diagnostics": (
+                  ("runtime-capture-diagnostics.json", "runtime-capture-diagnostics.json", mib, passed("evidence_validation")),),
+              "runtime-credit-diagnostics": (
+                  ("export-credit-public.json", "export-credit-public.json", mib, passed("evidence_validation")),),
+              "runtime-sqlite-append-controls": (
+                  ("sqlite-append-control-evidence/summary.json", "sqlite-append-controls-summary.json", 64 * 1024, passed("evidence_validation")),),
+              "runtime-sqlite-failure-diagnostics": (
+                  ("runtime-sqlite-failure-diagnostics.json", "runtime-sqlite-failure-diagnostics.json", mib, False),
+                  ("runtime-sqlite-control-evidence/summary.json", "runtime-sqlite-controls-summary.json", mib, passed("controls_validation"))),
+              "runtime-stop-diagnostics": (
+                  ("runtime-stop-diagnostics.json", "runtime-stop-diagnostics.json", mib, passed("evidence_validation")),
+                  ("runtime-native-thread-origins.json", "runtime-native-thread-origins.json", 32 * 1024, False)),
+          }
+          for source, name, cap, required in specs.get(suite, ()):
+              evidence_ok &= copy_bounded(temp / source, name, cap, required=required)
+
+          report["evidence_capture"] = "success" if evidence_ok else "failure"
+          (staging / "stage-report.json").write_text(json.dumps(report, sort_keys=True) + "\n", encoding="utf-8")
+          print("evidence_capture=" + report["evidence_capture"])
+          ok = ok and evidence_ok
+          print(*lines, sep="\n")
+          sys.exit(not ok)
+      - name: Encrypt retained evidence even when the workload fails
+        id: seal
+        if: ${{ always() }}
+        shell: python
+        env:
+          CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
+          EMO_EVIDENCE_SOURCE: '50a49af989afb6ca101cad4e4e3314d9cf50e769'
+          EMO_EVIDENCE_PACKAGER: ''
+          EMO_EVIDENCE_JOB: '${{ env.EMO_DIAGNOSTIC }}'
+          EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
+        run: |
+          import os
+          import platform
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          root = Path(os.environ["RUNNER_TEMP"]).resolve()
+          tools = root / "_emo_age_tool"
+          worker = Path("controller/scripts")
+          exe = tools / ("age.exe" if platform.system() == "Windows" else "age")
+          target = root / "_emo_ciphertext" / "evidence.tar.age"
+          subprocess.run([sys.executable, str(worker / "ci_evidence.py"), "diagnostics",
+                          str(root / "_emo_evidence" / "diagnostics"), str(target), str(exe)], check=True)
+      - name: Upload ciphertext only
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-diagnostics-${{ env.EMO_DIAGNOSTIC }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/_emo_ciphertext/evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
