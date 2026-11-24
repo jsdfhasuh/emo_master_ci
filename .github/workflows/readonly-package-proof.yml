@@ -1,0 +1,163 @@
+name: Readonly Windows build with new packager revision
+on:
+  push:
+    branches: [dot/readonly-package-proof-20261124]
+
+permissions:
+  contents: read
+
+jobs:
+  build-only:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/readonly-package-proof-20261124'
+    name: ${{ matrix.target }} build and validate
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [emo-master, emo-master-runtime]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
+          path: product
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/python_build_scripts
+          ref: 23b6774c4f99c6ad7fffbf13b3ebbc8a453d7984
+          path: packager
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Install required Python packages quietly
+        shell: python
+        run: |
+          import subprocess
+          import sys
+          p = subprocess.run([sys.executable, "-m", "pip", "install", "-r", "product/requirements-dev.txt",
+                              "pyinstaller==6.22.2", "psutil", "pywinauto", "Pillow"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          print("build_dependencies=" + ("success" if p.returncode == 0 else "failure"))
+          sys.exit(p.returncode != 0)
+      - name: Install and verify pinned Inno Setup
+        shell: pwsh
+        run: |
+          try {
+            $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+            $dir = Join-Path $env:RUNNER_TEMP 'InnoSetup-6_7_3'
+            Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+            $sig = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Pyrsys B\.V\.') { throw 'signature' }
+            $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$dir") -WindowStyle Hidden -Wait -PassThru
+            $iscc = Join-Path $dir 'ISCC.exe'
+            if ($p.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $iscc -PathType Leaf)) { throw 'installer' }
+            Add-Content -LiteralPath $env:GITHUB_ENV "ISCC_PATH=$iscc"
+            Write-Output 'inno_setup=success'
+          } catch {
+            Write-Output 'inno_setup=failure'
+            exit 1
+          }
+      - name: Build and validate without submitting a release
+        id: workload
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          EXPECTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          HUARAY_CAMERA_SMOKE: '0'
+          QT_QPA_PLATFORM: offscreen
+        shell: python
+        run: |
+          import ast
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import stat
+          import subprocess
+          import sys
+
+          source = Path("product").resolve()
+          packager = Path("packager").resolve()
+          release = ast.parse((source / "src/emo_master/app_version.py").read_text(encoding="utf-8"))
+          version, = (ast.literal_eval(node.value) for node in release.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "APP_VERSION" for target in node.targets))
+          if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", version):
+              sys.exit(1)
+          private = Path(os.environ["RUNNER_TEMP"])
+          evidence = private / "_emo_evidence" / "package"
+          evidence.mkdir(parents=True, exist_ok=False)
+          output = private / "product-build-verification"
+          safe_env = {k: v for k, v in os.environ.items() if not k.startswith(("GITHUB_", "ACTIONS_", "RUNNER_"))
+                      and k not in {"GH_TOKEN", "EMO_CI_TOKEN", "SOURCE_REPO_TOKEN", "RELEASE_REPO_TOKEN"}}
+          args = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
+                  str(source / "scripts/ci_migration/windows/windows-build-validate.ps1"),
+                  "-Target", os.environ["BUILD_TARGET"], "-SourceRoot", str(source), "-PackagerRoot", str(packager),
+                  "-SourceSha", "2e46f24b88f8624937b4465ddaf4490cbe831fb7", "-ReleaseTag", "v" + version,
+                  "-WorkflowSha", os.environ["EXPECTED_WORKFLOW_SHA"], "-OutputDirectory", str(output)]
+          with (evidence / "product-build.log").open("xb") as log:
+              result = subprocess.run(args, env=safe_env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+          phase_file = output / "stage.txt"
+          phases = {b"runtime-source", b"runtime-identity", b"build", b"runtime-archive-native",
+                    b"designer-icons", b"designer-contract", b"designer-frozen", b"complete"}
+          try:
+              with phase_file.open("rb") as phase_stream:
+                  phase = phase_stream.read(64)
+          except OSError:
+              phase = b"preflight"
+          category = phase.decode("ascii") if phase in phases else "preflight_or_unknown"
+          (evidence / "phase.txt").write_text(category + "\n", encoding="ascii")
+          if os.environ["BUILD_TARGET"] == "emo-master-runtime":
+              report = output / "package" / "source-check"
+              for filename in ("source-regression.log", "source-regression.xml"):
+                  item = report / filename
+                  try:
+                      metadata = item.lstat()
+                  except FileNotFoundError:
+                      continue
+                  if (item.resolve() == item and stat.S_ISREG(metadata.st_mode)
+                          and metadata.st_size <= 16 * 1024 * 1024):
+                      shutil.copyfile(item, evidence / filename)
+          print("build_stage=" + category)
+          print("build_and_validate=" + ("success" if result.returncode == 0 else "failure"))
+          sys.exit(result.returncode != 0)
+      - name: Encrypt retained evidence even when the workload fails
+        id: seal
+        if: ${{ always() }}
+        shell: python
+        env:
+          CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
+          EMO_EVIDENCE_SOURCE: '2e46f24b88f8624937b4465ddaf4490cbe831fb7'
+          EMO_EVIDENCE_PACKAGER: '23b6774c4f99c6ad7fffbf13b3ebbc8a453d7984'
+          EMO_EVIDENCE_JOB: '${{ matrix.target }}'
+          EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
+        run: |
+          import os
+          import platform
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          root = Path(os.environ["RUNNER_TEMP"]).resolve()
+          tools = root / "_emo_age_tool"
+          worker = Path("controller/scripts")
+          exe = tools / ("age.exe" if platform.system() == "Windows" else "age")
+          subprocess.run([sys.executable, str(worker / "install_age.py"), str(tools)], check=True)
+          target = root / "_emo_ciphertext" / "evidence.tar.age"
+          subprocess.run([sys.executable, str(worker / "ci_evidence.py"), "package",
+                          str(root / "_emo_evidence" / "package"), str(target), str(exe)], check=True)
+      - name: Upload ciphertext only
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-package-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/_emo_ciphertext/evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
