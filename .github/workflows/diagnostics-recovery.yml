@@ -6,6 +6,7 @@ on:
       - dot/public-diagnostics-capture-recovery
       - dot/public-diagnostics-sqlite-failure-recovery
       - dot/public-diagnostics-stop-recovery
+    paths: [".github/diagnostic-activation/*.json"]
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 6a3efa0f512d6889b3f5f345685724d03f4dc54e
+          ref: b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -108,7 +109,7 @@ jobs:
                                        "--suite", os.environ["EMO_DIAGNOSTIC"],
                                        "--product-root", str(product),
                                        "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
-                                       "--source-sha", "6a3efa0f512d6889b3f5f345685724d03f4dc54e",
+                                       "--source-sha", "b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166",
                                        "--private-evidence-dir", str(evidence),
                                        "--run-id", os.environ["GITHUB_RUN_ID"],
                                        "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
@@ -162,7 +163,7 @@ jobs:
 
           for ordinal, stage in enumerate(STAGES[suite], 3):
               name = f"step-{ordinal:02d}.log"
-              evidence_ok &= copy_bounded(evidence / name, name, 256 * 1024, log=True,
+              evidence_ok &= copy_bounded(evidence / name, name, 3 * mib if stage == "observed_tests" else 256 * 1024, log=True,
                                           required=report.get(stage) in ("success", "failure") and stage != "evidence_present")
 
           temp = evidence / "temp"
@@ -175,11 +176,23 @@ jobs:
               evidence_ok &= copy_bounded(product / "display-evidence" / "junit.xml",
                                           "junit.xml", 12 * mib, required=attempted("contract"))
           if "observed_tests" in STAGES[suite]:
+              for name, cap in (("pytest-phases.jsonl", 16 * mib),
+                                ("pytest-failures.jsonl", 2 * mib),
+                                ("pytest-stacks.log", 2 * mib)):
+                  evidence_ok &= copy_bounded(temp / name, name, cap,
+                                              required=attempted("observed_tests"))
+              if passed("observed_tests"):
+                  try:
+                      events = [json.loads(row) for row in
+                                (staging / "pytest-phases.jsonl").read_text(encoding="utf-8").splitlines()]
+                      evidence_ok &= bool(events) and events[-1].get("event") == "session_finish" and events[-1].get("exitstatus") == 0
+                  except (OSError, ValueError, AttributeError):
+                      evidence_ok = False
               evidence_ok &= copy_bounded(temp / "observed-junit.xml", "observed-junit.xml",
-                                          12 * mib, required=attempted("observed_tests") and report.get("observed_tests_budget") != "expired")
+                                          10 * mib, required=attempted("observed_tests") and report.get("observed_tests_budget") != "expired")
           if suite == "runtime-a18-diagnostics":
               evidence_ok &= copy_bounded(temp / "wal-control-junit.xml", "wal-control-junit.xml",
-                                          12 * mib, required=attempted("wal_control"))
+                                          10 * mib, required=attempted("wal_control"))
 
           specs = {
               "runtime-a18-diagnostics": (
@@ -212,7 +225,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: '6a3efa0f512d6889b3f5f345685724d03f4dc54e'
+          EMO_EVIDENCE_SOURCE: 'b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166'
           EMO_EVIDENCE_PACKAGER: ''
           EMO_EVIDENCE_JOB: '${{ env.EMO_DIAGNOSTIC }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}

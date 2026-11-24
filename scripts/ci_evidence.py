@@ -17,7 +17,7 @@ FILES = {
                "qt.stdout.log", "qt.stderr.log", "checks.stdout.log", "checks.stderr.log",
                "ci-results.xml", "ci-shard.json", "ci-failures.log", "two-job-observation.json", "status.json"},
     "package": {"product-build.log", "phase.txt", "source-regression.log", "source-regression.xml"},
-    "diagnostics": {"stage-report.json", "junit.xml", "observed-junit.xml", "wal-control-junit.xml",
+    "diagnostics": {"stage-report.json", "pytest-phases.jsonl", "pytest-failures.jsonl", "pytest-stacks.log", "junit.xml", "observed-junit.xml", "wal-control-junit.xml",
                     "runtime-a18-phase-diagnostics.json", "runtime-capture-diagnostics.json",
                     "export-credit-public.json", "sqlite-append-controls-summary.json",
                     "runtime-sqlite-failure-diagnostics.json", "runtime-sqlite-controls-summary.json",
