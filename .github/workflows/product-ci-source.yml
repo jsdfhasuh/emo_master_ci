@@ -1,0 +1,116 @@
+name: Verified public product source
+on:
+  workflow_call:
+    inputs:
+      execution_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-shards:
+    if: github.repository_id == '1468905732' && github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/ci-worker-')
+    name: "${{ matrix.platform }} source (${{ matrix.shard }}) / Python 3.10"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [runtime, other]
+        platform: [linux, windows]
+        include:
+          - platform: linux
+            os: ubuntu-latest
+            timeout: 60
+          - platform: windows
+            os: windows-latest
+            timeout: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      # The initial path accepts approved main pushes only. It is deliberately
+      # uncredentialed and cannot read after the product becomes private.
+      - name: Validate immutable input before checkout
+        env:
+          PRODUCT_EXECUTION_SHA: ${{ inputs.execution_sha }}
+        shell: python
+        run: |
+          import os, re, sys
+          expected = os.environ["PRODUCT_EXECUTION_SHA"]
+          sys.exit(0 if re.fullmatch("[0-9a-f]{40}", expected) and expected != "0" * 40 else 1)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ inputs.execution_sha }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Verify product SHA
+        env:
+          PRODUCT_EXECUTION_SHA: ${{ inputs.execution_sha }}
+        shell: python
+        run: |
+          from subprocess import PIPE, run
+          import os, re, sys
+          expected = os.environ["PRODUCT_EXECUTION_SHA"]
+          if not re.fullmatch("[0-9a-f]{40}", expected) or expected == "0" * 40:
+              sys.exit(1)
+          result = run(["git", "-C", "product", "rev-parse", "HEAD"], stdout=PIPE, stderr=PIPE, text=True)
+          sys.exit(0 if result.returncode == 0 and result.stdout.strip() ==
+                   expected else 1)
+      - name: Run original source checks and fixed shard
+        id: workload
+        shell: python
+        env:
+          SOURCE_PLATFORM: ${{ matrix.platform }}
+          SOURCE_SHARD: ${{ matrix.shard }}
+        run: |
+          import os
+          from pathlib import Path
+          from subprocess import DEVNULL, run
+          import sys
+          evidence = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True) / "_emo_evidence" / "source"
+          sys.exit(run([sys.executable, "controller/scripts/source_recipe.py", "product",
+                        os.environ["SOURCE_PLATFORM"], os.environ["SOURCE_SHARD"],
+                        "--evidence-dir", str(evidence)], stdout=DEVNULL, stderr=DEVNULL).returncode)
+      - name: Encrypt retained evidence even when the workload fails
+        id: seal
+        if: ${{ always() }}
+        shell: python
+        env:
+          CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
+          EMO_EVIDENCE_SOURCE: ${{ inputs.execution_sha }}
+          EMO_EVIDENCE_PACKAGER: ''
+          EMO_EVIDENCE_JOB: '${{ matrix.platform }}-${{ matrix.shard }}'
+          EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
+        run: |
+          import os
+          import platform
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          root = Path(os.environ["RUNNER_TEMP"]).resolve()
+          tools = root / "_emo_age_tool"
+          worker = Path("controller/scripts")
+          exe = tools / ("age.exe" if platform.system() == "Windows" else "age")
+          subprocess.run([sys.executable, str(worker / "install_age.py"), str(tools)], check=True)
+          target = root / "_emo_ciphertext" / "evidence.tar.age"
+          subprocess.run([sys.executable, str(worker / "ci_evidence.py"), "source",
+                          str(root / "_emo_evidence" / "source"), str(target), str(exe)], check=True)
+      - name: Upload ciphertext only
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-source-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/_emo_ciphertext/evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

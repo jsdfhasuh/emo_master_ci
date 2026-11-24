@@ -1,0 +1,57 @@
+name: Product CI Dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      dispatcher_run_id:
+        required: true
+        type: string
+      request_artifact_id:
+        required: true
+        type: string
+permissions: {}
+jobs:
+  ingress:
+    name: Verify product dispatch ingress
+    if: >-
+      github.repository == 'jsdfhasuh/emo_master_ci' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.sha == vars.PRODUCT_CI_APPROVED_WORKER_SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ci-control
+    permissions:
+      contents: read
+    outputs:
+      execution_sha: ${{ steps.verify.outputs.execution_sha }}
+      source_event: ${{ steps.verify.outputs.source_event }}
+      source_ref: ${{ steps.verify.outputs.source_ref }}
+      request_id: ${{ steps.verify.outputs.request_id }}
+      suites: ${{ steps.verify.outputs.suites }}
+    steps:
+      - name: Checkout pinned public control code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ vars.PRODUCT_CI_APPROVED_WORKER_SHA }}
+          persist-credentials: false
+      - name: Verify product run and request artifact
+        id: verify
+        env:
+          RUN_ID: ${{ inputs.dispatcher_run_id }}
+          ARTIFACT_ID: ${{ inputs.request_artifact_id }}
+          PRODUCT_DISPATCHER_ID: ${{ vars.PRODUCT_CI_DISPATCHER_ID }}
+          PRODUCT_DISPATCHER_BLOB: ${{ vars.PRODUCT_CI_DISPATCHER_BLOB }}
+          APPROVED_WORKER_SHA: ${{ vars.PRODUCT_CI_APPROVED_WORKER_SHA }}
+          EMO_CI_TOKEN: ${{ secrets.EMO_CI_TOKEN }}
+        run: python scripts/product_ci_ingress.py --run "$RUN_ID" --artifact "$ARTIFACT_ID"
+  source:
+    if: >-
+      needs.ingress.result == 'success' &&
+      needs.ingress.outputs.source_event == 'push' &&
+      needs.ingress.outputs.suites == '["ci"]' &&
+      vars.PRODUCT_CI_SHADOW_SOURCE == 'true'
+    needs: ingress
+    uses: ./.github/workflows/product-ci-source.yml
+    permissions:
+      contents: read
+    with:
+      execution_sha: ${{ needs.ingress.outputs.execution_sha }}
