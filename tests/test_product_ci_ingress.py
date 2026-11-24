@@ -26,7 +26,7 @@ class Fake:
         self.workflow_id = 10
         self.artifact_read = False
         self.request = dict(schema_version=1, source_repository_id=PRODUCT_ID, request_id="5-2",
-                            ci_workflow_sha=WORKER, source_head_sha=HEAD, check_sha=HEAD,
+                            suites=["ci"], ci_workflow_sha=WORKER, source_head_sha=HEAD, check_sha=HEAD,
                             source_event_name="push", source_ref="refs/heads/main", execution_sha=HEAD)
 
     def __call__(self, url, token):
@@ -67,6 +67,21 @@ class IngressTest(unittest.TestCase):
         fake = Fake()
         self.assertEqual(self.run_ingress(fake)["execution_sha"], HEAD)
         self.assertTrue(fake.downloaded)
+
+    def test_preserves_bound_scope_without_expanding_it(self):
+        for suites in ([], ["ci"], ["web-panel-ci"], ["web-panel-ci", "ci"]):
+            with self.subTest(suites=suites):
+                fake = Fake()
+                fake.request["suites"] = suites
+                self.assertEqual(self.run_ingress(fake)["suites"], json.dumps(suites, separators=(",", ":")))
+
+    def test_malformed_scope_is_rejected(self):
+        for suites in (None, "ci", [1], ["ci", "ci"], ["ci\nextra=1"], ["release-windows"], ["unknown"], ["x" * 65], ["s" + str(i) for i in range(33)]):
+            with self.subTest(suites=suites):
+                fake = Fake()
+                fake.request["suites"] = suites
+                with self.assertRaises(Invalid):
+                    self.run_ingress(fake)
 
     def test_fixed_product_filename_is_not_public_caller_filename(self):
         self.assertEqual(DISPATCHER_PATH, PRODUCT_WORKFLOW)

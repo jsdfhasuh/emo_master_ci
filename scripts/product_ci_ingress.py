@@ -73,6 +73,16 @@ def sha(value):
     return isinstance(value, str) and SHA.fullmatch(value) and value != "0" * 40
 
 
+# Reviewed nonrelease route IDs at product control commit 7e1c1376.
+# Passing a route ID through as metadata does not authorize that workload.
+NONRELEASE_SUITES = frozenset({
+    "ci", "web-panel-ci", "display-session-contract", "runtime-a18-diagnostics",
+    "runtime-capture-diagnostics", "runtime-credit-diagnostics", "runtime-sqlite-append-controls",
+    "runtime-sqlite-failure-diagnostics", "runtime-stop-diagnostics", "runtime-windows",
+    "validate-windows-package",
+})
+
+
 def acquire(*, run_id, artifact_id, workflow_id, dispatcher_blob, worker_sha, token, transport=fetch):
     for number in (run_id, artifact_id, workflow_id):
         require(type(number) is int and number > 0, "invalid GitHub ID")
@@ -162,10 +172,14 @@ def acquire(*, run_id, artifact_id, workflow_id, dispatcher_blob, worker_sha, to
         expected.update(source_pr_number=number, source_base_sha=base, source_merge_sha=execution)
     require(all(type(request.get(k)) is type(v) and request[k] == v for k, v in expected.items()),
             "request does not match fresh authoritative provenance")
+    suites = request.get("suites")
+    require(isinstance(suites, list) and len(suites) <= len(NONRELEASE_SUITES)
+            and all(isinstance(s, str) and s in NONRELEASE_SUITES for s in suites)
+            and len(set(suites)) == len(suites), "invalid requested suites")
     final_run = api(f"/actions/runs/{run_id}")
     require(final_run.get("run_attempt") == attempt and final_run.get("head_sha") == run_head, "dispatcher superseded")
     return {"execution_sha": execution, "source_event": event, "source_ref": ref,
-            "request_id": expected["request_id"], "suites": '["ci"]'}
+            "request_id": expected["request_id"], "suites": json.dumps(suites, separators=(",", ":"))}
 
 
 def main():
