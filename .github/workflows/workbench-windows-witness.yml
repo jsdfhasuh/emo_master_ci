@@ -15,7 +15,7 @@ jobs:
         target: [single]
     env:
       QT_QPA_PLATFORM: offscreen
-      EMO_EVIDENCE_SOURCE: '4949290ad73515bae8c388f9760412c84d295094'
+      EMO_EVIDENCE_SOURCE: 'dcb9f70255cad97c8e4de7ea8f5b533d54850afb'
       EMO_EVIDENCE_PACKAGER: ''
       EMO_EVIDENCE_JOB: 'workbench-${{ matrix.target }}'
       CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
@@ -38,7 +38,7 @@ jobs:
         id: age
         shell: pwsh
         run: python controller/scripts/install_age.py "$env:RUNNER_TEMP/_emo_age_tool"
-      - name: Run unmodified workbench assertions under native Windows with Qt offscreen
+      - name: Run original workbench assertions with persisted-event fixture on Windows
         id: workload
         shell: python
         env:
