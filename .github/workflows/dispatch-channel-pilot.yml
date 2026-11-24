@@ -1,0 +1,38 @@
+name: Dispatch Channel Pilot
+on:
+  workflow_dispatch:
+    inputs:
+      product_sha:
+        description: Exact non-required product status target
+        required: true
+        type: string
+      probe:
+        description: Fixed synthetic result (no product execution)
+        required: true
+        type: choice
+        options: [pass, fail]
+permissions: {}
+jobs:
+  pilot:
+    if: github.repository_id == '1468905732' && startsWith(github.ref, 'refs/tags/ci-dispatch-pilot-')
+    name: Dispatch pilot result
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Bind exact product status target
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.product_sha }}
+          APPROVED_SHA: '966d6821357b0380d328ee0b1c86243826247cdd'
+        run: |
+          test "$REQUESTED_SHA" = "$APPROVED_SHA"
+      - name: Return fixed synthetic result
+        shell: bash
+        env:
+          PROBE: ${{ inputs.probe }}
+        run: |
+          case "$PROBE" in
+            pass) exit 0 ;;
+            fail) exit 1 ;;
+            *) exit 2 ;;
+          esac
