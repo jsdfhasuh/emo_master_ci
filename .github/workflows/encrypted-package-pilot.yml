@@ -1,0 +1,15 @@
+name: Nondefault encrypted Windows package pilot
+on:
+  push:
+    branches: [dot/encrypted-package-pilot-20261124]
+permissions:
+  contents: read
+jobs:
+  package-pilot:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/encrypted-package-pilot-20261124'
+    uses: jsdfhasuh/python_build_scripts/.github/workflows/emo-master-encrypted-package-pilot.yml@9657775338b0c4afa19ccab3a45792c146752203
+    permissions:
+      contents: read
+    with:
+      packager_ref: '9657775338b0c4afa19ccab3a45792c146752203'
+      recipient: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
