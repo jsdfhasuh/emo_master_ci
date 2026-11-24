@@ -1,0 +1,47 @@
+name: Public product authenticated source proof (read-only)
+on:
+  push:
+    branches: [dot/public-auth-source-proof-20261124]
+
+permissions:
+  contents: read
+
+jobs:
+  authenticate-public-source:
+    if: >-
+      github.repository_id == '1468905732' &&
+      github.ref == 'refs/heads/dot/public-auth-source-proof-20261124'
+    name: Authenticated checkout-only / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout approved public controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - name: Authenticate without anonymous fallback and verify still Public
+        env:
+          PRODUCT_EXECUTION_SHA: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
+          EMO_CI_TOKEN: ${{ secrets.EMO_CI_TOKEN }}
+        run: python controller/scripts/product_source_auth.py authenticate --require-public
+      - name: Checkout exact product with explicit credential
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
+          token: ${{ secrets.EMO_CI_TOKEN }}
+          path: product
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Prove exact checkout and cleaned binding without running product code
+        env:
+          PRODUCT_EXECUTION_SHA: 2e46f24b88f8624937b4465ddaf4490cbe831fb7
+        run: python controller/scripts/product_source_auth.py verify-checkout
