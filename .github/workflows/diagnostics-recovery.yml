@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166
+          ref: 4949290ad73515bae8c388f9760412c84d295094
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -109,7 +109,7 @@ jobs:
                                        "--suite", os.environ["EMO_DIAGNOSTIC"],
                                        "--product-root", str(product),
                                        "--product-ref", "refs/heads/dot/ci-source-event-context-20261123",
-                                       "--source-sha", "b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166",
+                                       "--source-sha", "4949290ad73515bae8c388f9760412c84d295094",
                                        "--private-evidence-dir", str(evidence),
                                        "--run-id", os.environ["GITHUB_RUN_ID"],
                                        "--run-attempt", os.environ["GITHUB_RUN_ATTEMPT"]],
@@ -225,7 +225,7 @@ jobs:
         shell: python
         env:
           CI_EVIDENCE_RECIPIENT: 'age175t0tm4e6908h3wjazctf3893gvfqc5p07sez9tsm85h9ndjpvrsx5pzw4'
-          EMO_EVIDENCE_SOURCE: 'b7e1d0bb2d9fe46c894c1a15eb11828f9d9a2166'
+          EMO_EVIDENCE_SOURCE: '4949290ad73515bae8c388f9760412c84d295094'
           EMO_EVIDENCE_PACKAGER: ''
           EMO_EVIDENCE_JOB: '${{ env.EMO_DIAGNOSTIC }}'
           EMO_EVIDENCE_OUTCOME: ${{ steps.workload.outcome || 'skipped' }}
