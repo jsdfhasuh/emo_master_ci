@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     env:
-      SOURCE_SHA: 20e37d67ea55fd71760dfc9c19b4891fc447174c
+      SOURCE_SHA: 770bfad99c7027077c4231946b2e0ea82ba3a0fa
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
