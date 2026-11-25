@@ -26,11 +26,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 5b08d7455b665ba1ac83f46890c83194bc92014f
+          ref: e1c19fcdbbee523b51c34ece905d45152033dfda
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
-          python-version: "3.10"
+          python-version: "3.10.11"
       - name: Verify V2 recipient and install pinned Windows age
         shell: python
         env:
@@ -94,7 +94,7 @@ jobs:
           if hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
               raise SystemExit("capture_v2=recipient_mismatch")
           revision = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=DEVNULL, text=True).strip()
-          if revision != "5b08d7455b665ba1ac83f46890c83194bc92014f":
+          if revision != "e1c19fcdbbee523b51c34ece905d45152033dfda":
               raise SystemExit("capture_v2=pin_mismatch")
           record = {"role": "diagnostic_only", "source_sha": revision,
                     "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"], "run": os.environ["GITHUB_RUN_ID"],
@@ -237,7 +237,7 @@ jobs:
           }, sort_keys=True).encode("ascii")
           meta = {
               "version": 1, "encryption_profile": "V2", "suite_family": "diagnostics",
-              "source_sha": "5b08d7455b665ba1ac83f46890c83194bc92014f",
+              "source_sha": "e1c19fcdbbee523b51c34ece905d45152033dfda",
               "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
               "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
