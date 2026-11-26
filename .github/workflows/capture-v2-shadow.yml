@@ -133,7 +133,7 @@ jobs:
         timeout-minutes: 96
         shell: python
         run: |
-          import os, subprocess, sys, threading
+          import os, subprocess, sys, threading, time
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
           controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"
@@ -148,26 +148,64 @@ jobs:
                      "-o", "faulthandler_timeout=90", "-p", "sqlite_phase_journal", "--junitxml", str(root / "observed-junit.xml")]
           worker = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          drain_failed = threading.Event()
+          limit = 4 * 1024 * 1024
           def drain():
-              remaining = 4 * 1024 * 1024
-              with (root / "observed-output.log").open("xb", buffering=0) as log:
+              tail = bytearray()
+              out = root / "observed-output.log"
+              partial = root / "observed-output.staging"
+              last_sync = time.monotonic()
+              def persist():
+                  partial.write_bytes(tail)
+                  partial.replace(out)
+              try:
                   while chunk := worker.stdout.read1(65536):
                       tail.extend(chunk)
-                      if len(tail) > 4*1024*1024:
-                          del tail[:-4*1024*1024]
-                  log.write(tail)
+                      if len(tail) > limit:
+                          del tail[:-limit]
+                      if time.monotonic() - last_sync >= 30:
+                          persist()
+                          last_sync = time.monotonic()
+              except Exception:
+                  drain_failed.set()
+              finally:
+                  try:
+                      persist()
+                  except Exception:
+                      drain_failed.set()
+
+          def terminate():
+              try:
+                  subprocess.run(["taskkill", "/PID", str(worker.pid), "/T", "/F"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+              finally:
+                  if worker.poll() is None:
+                      worker.kill()
+                  worker.wait(timeout=15)
+
           reader = threading.Thread(target=drain, daemon=True)
           reader.start()
-          try:
-              status = worker.wait(timeout=90 * 60)
-          except subprocess.TimeoutExpired:
-              subprocess.run(["taskkill", "/PID", str(worker.pid), "/T", "/F"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-              (root / "capture-timed-out").touch()
-              status = 124
+          deadline = time.monotonic() + 90 * 60
+          while True:
+              if drain_failed.is_set():
+                  terminate()
+                  status = 1
+                  break
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  terminate()
+                  (root / "capture-timed-out").touch()
+                  status = 124
+                  break
+              try:
+                  status = worker.wait(timeout=min(remaining, 1))
+                  break
+              except subprocess.TimeoutExpired:
+                  pass
           reader.join(timeout=15)
-          if reader.is_alive():
-              print("capture_v2=output_drain_unfinished")
+          if reader.is_alive() or drain_failed.is_set():
+              (root / "capture-output-drain-failed").touch()
+              print("capture_v2=output_drain_failed")
               sys.exit(1)
           print("capture_v2=workload_finished")
           sys.exit(status)
@@ -237,6 +275,7 @@ jobs:
               "observed_tests": os.environ["OBSERVED"],
               "evidence_validation": os.environ["VALIDATED"],
               "capture_payload": "present" if name in files else "unavailable",
+              "output_drain": "failed" if (root / "capture-output-drain-failed").is_file() else "not_reported_failed",
               "observed_tests_budget": "expired" if (root / "capture-timed-out").is_file() else "not_reported_expired",
           }, sort_keys=True).encode("ascii")
           meta = {
