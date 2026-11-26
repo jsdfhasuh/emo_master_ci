@@ -12,7 +12,7 @@ jobs:
   control:
     if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/mainline-ci-migration-20261124'
     runs-on: windows-latest
-    timeout-minutes: 95
+    timeout-minutes: 115
     defaults:
       run:
         working-directory: product
@@ -65,7 +65,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
           status, stage = "failure", "identity"
-          deadline = time.monotonic() + 88 * 60
+          deadline = time.monotonic() + 107 * 60
           def run(args, name, seconds=None, extra=None):
               with (root / name).open("xb") as log:
                   child = subprocess.Popen([sys.executable, *args], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, "GITHUB_WORKSPACE": str(Path.cwd()), **(extra or {})})
@@ -95,7 +95,7 @@ jobs:
               return checkpoints[name]
           try:
               activation = json.loads((Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / ".github" / "diagnostic-activation" / "sqlite-failure-observer-v2.json").read_text(encoding="utf-8"))
-              if activation != {"product_sha": os.environ["SOURCE_SHA"], "profile": "sqlite-failure-observer-v2"}:
+              if activation != {"product_sha": os.environ["SOURCE_SHA"], "profile": "sqlite-failure-observer-v2-stable-timing"}:
                   raise ValueError
               head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
               if head != os.environ["SOURCE_SHA"]:
@@ -107,9 +107,10 @@ jobs:
                   p = phase("observed", ["-m","pytest","-q","-p","scripts.r3_sqlite_failure_diagnostics",
                             "--sqlite-failure-diagnostics",str(root / "runtime-sqlite-failure-diagnostics.json"),
                             "--sqlite-failure-call-details", "-p", "sqlite_phase_journal",
-                            "--junitxml", str(root / "sqlite-failure-observed.xml")], 70*60,
+                            "--junitxml", str(root / "sqlite-failure-observed.xml")], 90*60,
                             {"PYTHONPATH": os.pathsep.join(filter(None, (str(Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"), os.environ.get("PYTHONPATH")))),
-                             "EMO_SQLITE_PHASE_JOURNAL": str(root / "sqlite-failure-phases.jsonl")})
+                             "EMO_SQLITE_PHASE_JOURNAL": str(root / "sqlite-failure-phases.jsonl"),
+                             "EMO_SQLITE_IMMEDIATE_FAILURES": "1"})
                   v = phase("evidence-validation", ["-c", OBS], 30, {"ORIGINAL_TEST_STEP":"success" if p==0 else "failure"})
                   d = phase("durable-controls", ["scripts/r3_sqlite_controls.py","--repo",str(Path.cwd()),
                             "--output",str(root / "runtime-sqlite-control-evidence"),"--case-timeout","30"], 240)

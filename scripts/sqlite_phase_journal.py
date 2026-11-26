@@ -1,7 +1,7 @@
 """Opt-in pytest phase journal for encrypted SQLite observer evidence."""
 import json
 import os
-import time
+from time import monotonic_ns as _monotonic_ns, time_ns as _utc_ns
 from pathlib import Path
 
 import pytest
@@ -21,8 +21,8 @@ class PhaseJournal:
             "v": 1,
             "seq": self.count + 1,
             "event": event,
-            "utc_ns": time.time_ns(),
-            "monotonic_ns": time.monotonic_ns(),
+            "utc_ns": _utc_ns(),
+            "monotonic_ns": _monotonic_ns(),
             **fields,
         }
         data = (json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n").encode("ascii")
@@ -54,7 +54,15 @@ class PhaseJournal:
         yield from self.phase(item, "teardown")
 
     def pytest_runtest_logreport(self, report):
-        self.write("report", nodeid=report.nodeid, phase=report.when, outcome=report.outcome)
+        fields = {}
+        if report.failed and os.environ.get("EMO_SQLITE_IMMEDIATE_FAILURES") == "1":
+            try:
+                # Opt-in, ciphertext-only excerpt survives an interruption
+                # before pytest completes its JUnit and terminal reporters.
+                fields["failure_tail"] = str(report.longrepr)[-8192:]
+            except Exception:
+                fields["failure_tail"] = "<formatting-failed>"
+        self.write("report", nodeid=report.nodeid, phase=report.when, outcome=report.outcome, **fields)
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_sessionfinish(self, session, exitstatus):
