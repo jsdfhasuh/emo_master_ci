@@ -1,0 +1,130 @@
+name: Windows ReadAsset file phases (diagnostic only)
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: [.github/workflows/credit-asset-file-focus-v2.yml]
+permissions:
+  contents: read
+concurrency:
+  group: credit-asset-file-focus-v2
+  cancel-in-progress: false
+jobs:
+  focus:
+    if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732'
+    runs-on: windows-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: product
+    env:
+      SOURCE_SHA: dfa0220b992c78c2343f01b319bace76317e79be
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ env.SOURCE_SHA }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10.11"
+      - id: bootstrap
+        name: Install digest-pinned age and verify recipient
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          if hashlib.sha256(os.environ["RECIPIENT"].encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("file_focus=recipient_mismatch")
+          url="https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"
+          with urlopen(url,timeout=40) as response:
+              data=response.read(12*1024*1024+1)
+          if hashlib.sha256(data).hexdigest()!="46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+              raise SystemExit("file_focus=age_mismatch")
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              (Path(os.environ["RUNNER_TEMP"])/"focus-age.exe").write_bytes(z.read("age/age.exe"))
+      - id: observed
+        name: Run actual ReadAsset file-phase focus
+        shell: python
+        run: |
+          import json, os, subprocess, sys
+          from pathlib import Path
+          path=Path(os.environ["RUNNER_TEMP"])/"asset-file-focus"
+          path.mkdir()
+          keep={"PATH","SYSTEMROOT","WINDIR","SYSTEMDRIVE","COMSPEC","PATHEXT","USERPROFILE","APPDATA","LOCALAPPDATA",
+                "PROGRAMFILES","PROGRAMFILES(X86)","PROGRAMDATA","NUMBER_OF_PROCESSORS","PROCESSOR_ARCHITECTURE","HOMEDRIVE","HOMEPATH"}
+          env={k:v for k,v in os.environ.items() if k.upper() in keep}
+          env.update(TEMP=str(path),TMP=str(path),QT_QPA_PLATFORM="offscreen",PYTHONUTF8="1",
+                     EMO_CI_ASSET_FILE_PHASES=str(path/"file-phases.json"),PYTHONPATH=str(Path.cwd()))
+          source=subprocess.check_output(["git","rev-parse","HEAD"],env=env,text=True,stderr=subprocess.DEVNULL).strip()
+          if source!=os.environ["SOURCE_SHA"]:
+              raise SystemExit("file_focus=source_mismatch")
+          receipt={"schema":1,"source_sha":source,"workflow_sha":os.environ["GITHUB_WORKFLOW_SHA"],
+                   "run":os.environ["GITHUB_RUN_ID"],"attempt":os.environ["GITHUB_RUN_ATTEMPT"],"stages":{}}
+          def save():
+              f=path/"stage.tmp";f.write_text(json.dumps(receipt),encoding="ascii");f.replace(path/"stage.json")
+          save()
+          for name,args,timeout in [
+              ("dependencies",[sys.executable,"-m","pip","install","-r","requirements-dev.txt"],540),
+              ("focus",[sys.executable,"-m","pytest","-q","--junitxml",str(path/"only-junit.xml"),
+                  "scripts/ci_credit_asset_file_focus_test.py::testOriginalReadAssetFilePhasesWithoutClientPngDecode"],120)]:
+              receipt["stages"][name]="running";save()
+              with (path/(name+".log")).open("xb") as log:
+                  proc=subprocess.Popen(args,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+                  try:
+                      rc=proc.wait(timeout=timeout)
+                  except subprocess.TimeoutExpired:
+                      subprocess.run(["taskkill","/PID",str(proc.pid),"/T","/F"],env=env,
+                                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,check=False)
+                      if proc.poll() is None: proc.kill()
+                      proc.wait(timeout=15)
+                      rc=124
+              receipt["stages"][name]=rc;save()
+              if rc!=0: raise SystemExit("file_focus="+name+"_failed")
+          if not all((path/p).is_file() for p in ("only-junit.xml","file-phases.json")):
+              raise SystemExit("file_focus=missing_receipt")
+      - id: seal
+        if: ${{ always() && steps.bootstrap.outcome == 'success' }}
+        name: Seal bounded V2 file timings and test evidence
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, json, os, stat, subprocess, tarfile
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          path=root/"asset-file-focus"
+          caps={"stage.json":8192,"file-phases.json":524288,"only-junit.xml":1048576,
+                "dependencies.log":1048576,"focus.log":1048576}
+          files={}
+          for name,cap in caps.items():
+              f=path/name
+              if not f.is_file(): continue
+              st=f.lstat()
+              if not stat.S_ISREG(st.st_mode) or st.st_nlink!=1 or getattr(st,"st_file_attributes",0)&0x400: continue
+              with f.open("rb") as stream:
+                  if not os.path.samestat(st,os.fstat(stream.fileno())): continue
+                  Buf=stream.read(cap+1)
+              if 0<len(Buf)<=cap: files[name]=Buf
+          if "stage.json" not in files: raise SystemExit("file_focus=stage_evidence_missing")
+          files["manifest.json"]=json.dumps({name:{"bytes":len(buf),"sha256":hashlib.sha256(buf).hexdigest()}
+                                               for name,buf in files.items()},sort_keys=True).encode("ascii")
+          with subprocess.Popen([str(root/"focus-age.exe"),"-r",os.environ["RECIPIENT"],"-o",str(root/"asset-file-focus.tar.age")],
+                                stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) as cipher:
+              with cipher.stdin as sink, tarfile.open(fileobj=sink,mode="w|") as bundle:
+                  for name,buf in sorted(files.items()):
+                      entry=tarfile.TarInfo(name);entry.size=len(buf);entry.mode=0o600
+                      bundle.addfile(entry,io.BytesIO(buf))
+              if cipher.wait(timeout=60)!=0: raise SystemExit("file_focus=seal_failed")
+      - name: Upload V2 ciphertext only
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: credit-asset-file-focus-${{ env.SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/asset-file-focus.tar.age
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
