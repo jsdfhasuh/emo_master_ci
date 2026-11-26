@@ -24,7 +24,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
+      SOURCE_SHA: 7fccb4988ad0e4abd390110dbb29c80151f5bb3b
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -34,6 +34,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             scripts/sqlite_phase_journal.py
+            scripts/capture_owner_probe.py
             .github/diagnostic-activation/capture-v2.json
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -111,7 +112,7 @@ jobs:
           controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller"
           activation = json.loads((controller / ".github/diagnostic-activation/capture-v2.json").read_text(encoding="utf-8"))
           if activation != {"product_sha": os.environ["SOURCE_SHA"], "scope": "full_capture_aligned_phase_journal",
-                            "validated_change": "bounded_output_drain"}:
+                            "validated_change": "failure_only_export_owner"}:
               raise SystemExit("capture_v2=activation_mismatch")
           if revision != os.environ["SOURCE_SHA"]:
               raise SystemExit("capture_v2=pin_mismatch")
@@ -141,12 +142,13 @@ jobs:
           env = dict(os.environ)
           env["EMO_SQLITE_PHASE_JOURNAL"] = str(root / "pytest-phases.jsonl")
           env["EMO_SQLITE_IMMEDIATE_FAILURES"] = "1"
+          env["EMO_PRIVATE_CAPTURE_OWNER_TRACE"] = str(root / "capture-owner-state.json")
           env["GITHUB_WORKSPACE"] = str(Path.cwd())
           env["PYTHONPATH"] = str(controller) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
           command = [sys.executable, "-m", "pytest", "-q",
                      "-p", "scripts.r3_sqlite_capture_diagnostics", "--sqlite-capture-diagnostics",
                      str(root / "runtime-capture-diagnostics.json"),
-                     "-o", "faulthandler_timeout=90", "-p", "sqlite_phase_journal", "--junitxml", str(root / "observed-junit.xml")]
+                     "-o", "faulthandler_timeout=90", "-p", "sqlite_phase_journal", "-p", "capture_owner_probe", "--junitxml", str(root / "observed-junit.xml")]
           worker = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           drain_failed = threading.Event()
@@ -257,7 +259,8 @@ jobs:
               raise SystemExit("capture_v2=recipient_mismatch")
           name = "runtime-capture-diagnostics.json"
           caps = {name: 1024 * 1024, "observed-output.log": 4 * 1024 * 1024,
-                  "pytest-phases.jsonl": 64 * 1024 * 1024, "observed-junit.xml": 12 * 1024 * 1024}
+                  "pytest-phases.jsonl": 64 * 1024 * 1024, "observed-junit.xml": 12 * 1024 * 1024,
+                  "capture-owner-state.json": 128 * 1024}
           files = {}
           for item, cap in caps.items():
               source = root / item
