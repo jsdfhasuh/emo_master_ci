@@ -37,7 +37,7 @@ def main():
     product = Path(sys.argv[1]).resolve()
     controller = Path(__file__).resolve().parents[1]
     requested = json.loads((controller/".github/diagnostic-activation/stop-original-v2.json").read_text(encoding="utf-8"))
-    if requested != {"product_sha":SOURCE,"profile":"stop-original-v2"}:
+    if requested != {"product_sha":SOURCE,"profile":"stop-original-v2","validation":"outer_pytest_cli_isolation"}:
         raise ValueError("activation_identity")
     public_head = subprocess.check_output(["git","-C",str(controller),"rev-parse","HEAD"],text=True).strip()
     if public_head != os.environ["GITHUB_WORKFLOW_SHA_FIXED"]:

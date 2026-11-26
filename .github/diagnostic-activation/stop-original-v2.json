@@ -1,4 +1,5 @@
 {
   "product_sha": "533aa64a72fff55f6339cf837114e5ca9255622b",
-  "profile": "stop-original-v2"
+  "profile": "stop-original-v2",
+  "validation": "outer_pytest_cli_isolation"
 }
