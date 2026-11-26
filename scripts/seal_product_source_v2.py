@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 
-from run_product_source_v2 import LOG_CAP, PRODUCT
+from run_product_source_v2 import LOG_CAP, checked_source_sha
 
 RECIPIENT_HASH = "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87"
 MIB = 1024 * 1024
@@ -70,8 +70,9 @@ def seal(source, raw, output, executable):
             or not re.fullmatch(r"[0-9a-f]{40}", period["workflow_sha"])
             or not all(re.fullmatch(r"[1-9][0-9]*", period[key]) for key in ("run", "attempt"))):
         raise ValueError("bad hosted identity")
+    source_sha = checked_source_sha(source)
     files = gather(source, raw, period["outcome"])
-    manifest = dict(version=1, encryption_profile="V2", suite_family="source", source_sha=PRODUCT,
+    manifest = dict(version=1, encryption_profile="V2", suite_family="source", source_sha=source_sha,
                     packager_sha="", job=f"{platform}-{shard}", **period,
                     files={k: dict(size=len(v), sha256=hashlib.sha256(v).hexdigest()) for k, v in files.items()})
     files["manifest.json"] = json.dumps(manifest, sort_keys=True).encode("ascii")

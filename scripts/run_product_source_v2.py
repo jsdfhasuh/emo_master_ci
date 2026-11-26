@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -23,6 +24,18 @@ assert app.platformName() == "windows"
 assert geometry.width() >= 1920 and geometry.height() >= 1080
 """
 LOG_CAP = 512 * 1024
+
+
+def checked_source_sha(source):
+    """Bind the executed checkout to the approved workflow input, or the legacy pin."""
+    expected = os.environ.get("EXPECTED_SOURCE_SHA", PRODUCT)
+    if not re.fullmatch(r"[0-9a-f]{40}", expected) or expected == "0" * 40:
+        raise ValueError("invalid Source pin")
+    actual = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True,
+                                     stderr=subprocess.DEVNULL).strip()
+    if actual != expected:
+        raise ValueError("checked-out Source revision does not match the pin")
+    return actual
 
 
 def commands(platform, shard, source):
@@ -82,10 +95,7 @@ def main(source, raw, platform, shard):
         if (platform not in ("linux", "windows") or shard not in ("runtime", "other")
                 or sys.platform != ("win32" if windows else "linux") or sys.version_info[:2] != (3, 10)):
             raise ValueError
-        head = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True,
-                                       stderr=subprocess.DEVNULL).strip()
-        if head != PRODUCT:
-            raise ValueError
+        checked_source_sha(source)
         env = {k: v for k, v in os.environ.items() if not k.startswith(("GITHUB_", "ACTIONS_", "RUNNER_"))}
         env["QT_QPA_PLATFORM"] = "windows" if windows else "offscreen"
         deadline = time.monotonic() + (90 if windows else 60) * 60
