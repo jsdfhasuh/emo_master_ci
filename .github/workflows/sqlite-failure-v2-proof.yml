@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 21b324602842c24001f1c29b6b469efabf23728e
+      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -106,7 +106,8 @@ jobs:
               if not rc:
                   p = phase("observed", ["-m","pytest","-q","-p","scripts.r3_sqlite_failure_diagnostics",
                             "--sqlite-failure-diagnostics",str(root / "runtime-sqlite-failure-diagnostics.json"),
-                            "--sqlite-failure-call-details", "-p", "sqlite_phase_journal"], 70*60,
+                            "--sqlite-failure-call-details", "-p", "sqlite_phase_journal",
+                            "--junitxml", str(root / "sqlite-failure-observed.xml")], 70*60,
                             {"PYTHONPATH": os.pathsep.join(filter(None, (str(Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"), os.environ.get("PYTHONPATH")))),
                              "EMO_SQLITE_PHASE_JOURNAL": str(root / "sqlite-failure-phases.jsonl")})
                   v = phase("evidence-validation", ["-c", OBS], 30, {"ORIGINAL_TEST_STEP":"success" if p==0 else "failure"})
@@ -134,6 +135,7 @@ jobs:
           mib = 1024 * 1024
           allowed = {"pytest-phases.jsonl": (root / "sqlite-failure-phases.jsonl", 64*mib, False),
                      "stage-report.json": (root / "sqlite-failure-status.json", 2048, False),
+                     "pytest-junit.xml": (root / "sqlite-failure-observed.xml", 12*mib, False),
                      "failure-observer.json": (root / "runtime-sqlite-failure-diagnostics.json", mib, False),
                      "control-summary.json": (root / "runtime-sqlite-control-evidence" / "summary.json", mib, False)}
           allowed.update({f"{k}.log": (root / f"sqlite-failure-{k}.log", cap, True)
@@ -180,11 +182,11 @@ jobs:
               if meta["outcome"] == "success":
                   last = json.loads(payloads["pytest-phases.jsonl"].rstrip(b"\n").rsplit(b"\n", 1)[-1])
                   assert last["event"] == "session_finish" and last["exitstatus"] == 0
-                  assert "control-summary.json" in payloads
+                  assert "control-summary.json" in payloads and "pytest-junit.xml" in payloads
                   assert payloads["control-validation.log"].strip() == b"five_controls_validated"
                   witness = payloads["evidence-validation.log"].strip()
                   assert witness == (b"failure_evidence_valid" if "failure-observer.json" in payloads else b"no_failure_observed")
-              assert sum(map(len, payloads.values())) <= 70*mib
+              assert sum(map(len, payloads.values())) <= 82*mib
               with subprocess.Popen([str(root / "sqlite-failure-age.exe"), "-r", recipient, "-o", str(output)],
                                     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as child:
                   with child.stdin as pipe, tarfile.open(fileobj=pipe, mode="w|") as archive:
