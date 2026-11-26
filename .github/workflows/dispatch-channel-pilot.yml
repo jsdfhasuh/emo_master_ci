@@ -1,4 +1,5 @@
-name: Trusted Product Source pilot
+name: Product PR original Source shards (non-required)
+run-name: Source full PR receipt ${{ inputs.dispatcher_run_id }}
 on:
   workflow_dispatch:
     inputs:
@@ -10,79 +11,30 @@ on:
         type: string
 permissions: {}
 jobs:
-  ingress:
-    if: >-
-      github.repository_id == '1468905732' &&
-      startsWith(github.ref, 'refs/tags/ci-worker-') &&
-      github.sha == vars.PRODUCT_CI_SHADOW_V2_WORKER_SHA &&
-      github.actor_id == vars.PRODUCT_CI_SHADOW_V2_ACTOR_ID &&
-      github.run_attempt == '1'
+  identity:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     outputs:
       execution_sha: ${{ steps.bind.outputs.execution_sha }}
+    permissions:
+      contents: read
     steps:
-      - name: Bind public metadata to fixed Source candidate
-        id: bind
-        shell: python
+      - name: Require activated worker and original sender
         env:
-          DISPATCHER_RUN: ${{ inputs.dispatcher_run_id }}
-          REQUEST_ARTIFACT: ${{ inputs.request_artifact_id }}
-          DISPATCHER_WORKFLOW: ${{ vars.PRODUCT_CI_SHADOW_V2_WORKFLOW_ID }}
-          APPROVED_PRODUCT_SHA: ${{ vars.PRODUCT_CI_SHADOW_V2_SOURCE_SHA }}
-        run: |
-          import json, os, re
-          from urllib.request import HTTPRedirectHandler, Request, build_opener
-
-          def need(ok):
-              if not ok:
-                  raise SystemExit("source_shadow=identity_refused")
-
-          def ident(key):
-              value = os.environ[key]
-              need(bool(re.fullmatch(r"[1-9][0-9]{0,19}", value)))
-              return int(value)
-
-          class NoRedirect(HTTPRedirectHandler):
-              def redirect_request(self, *_args):
-                  return None
-
-          def api(path):
-              endpoint = "https://api.github.com/repos/jsdfhasuh/emo_master/" + path
-              with build_opener(NoRedirect()).open(Request(endpoint,
-                       headers={"X-GitHub-Api-Version": "2026-03-10", "Accept": "application/vnd.github+json"}),
-                       timeout=15) as response:
-                  data = response.read(262145)
-              need(len(data) <= 262144)
-              return json.loads(data)
-
-          try:
-              run_id, aid = ident("DISPATCHER_RUN"), ident("REQUEST_ARTIFACT")
-              sha = os.environ["APPROVED_PRODUCT_SHA"]
-              need(bool(re.fullmatch(r"[0-9a-f]{40}",sha)) and sha != "0"*40)
-              branch = "dot/mainline-ci-migration-20261124"
-              run = api(f"actions/runs/{run_id}")
-              need(run["id"] == run_id and run["workflow_id"] == ident("DISPATCHER_WORKFLOW")
-                   and run["repository"]["id"] == run["head_repository"]["id"] == 1343796337
-                   and run["path"] == ".github/workflows/product-source-shadow-request.yml"
-                   and run["event"] in ("push","workflow_dispatch") and run["head_branch"] == branch
-                   and run["head_sha"] == sha and run["status"] == "completed" and run["conclusion"] == "success")
-              tip = api("git/ref/heads/"+branch)
-              need(tip["object"]["sha"] == sha)
-              artifact = api(f"actions/artifacts/{aid}")
-              attempt = run["run_attempt"]
-              need(type(attempt) is int and attempt > 0 and artifact["id"] == aid and artifact["expired"] is False
-                   and artifact["name"] == f"ci-request-{run_id}-{attempt}"
-                   and artifact["workflow_run"]["id"] == run_id
-                   and artifact["workflow_run"]["head_sha"] == sha
-                   and artifact["workflow_run"]["repository_id"] == 1343796337
-                   and bool(re.fullmatch(r"sha256:[0-9a-f]{64}",artifact["digest"])))
-              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as out:
-                  out.write(f"execution_sha={sha}\n")
-          except Exception:
-              raise SystemExit("source_shadow=metadata_unavailable") from None
+          AUTHORIZED: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1468905732' && github.ref == 'refs/tags/ci-worker-source-pr-full-45783106228-v2' && github.sha == vars.PRODUCT_CI_PR_FULL_WORKER_SHA && github.actor_id == '49879362' && github.run_attempt == '1' }}
+        run: test "$AUTHORIZED" = true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts
+      - id: bind
+        env:
+          ORIGIN: ${{ inputs.dispatcher_run_id }}
+          ARTIFACT: ${{ inputs.request_artifact_id }}
+        run: python -I scripts/source_event_pair.py "$ORIGIN" "$ARTIFACT"
   source:
-    needs: ingress
+    needs: identity
     permissions:
       contents: read
     name: "${{ matrix.platform }} source (${{ matrix.shard }}) / Python 3.10"
@@ -97,7 +49,7 @@ jobs:
           - {platform: linux, os: ubuntu-latest, job_timeout: 65}
           - {platform: windows, os: windows-latest, job_timeout: 95}
     env:
-      EXPECTED_SOURCE_SHA: ${{ needs.ingress.outputs.execution_sha }}
+      EXPECTED_SOURCE_SHA: ${{ needs.identity.outputs.execution_sha }}
       SOURCE_PLATFORM: ${{ matrix.platform }}
       SOURCE_SHARD: ${{ matrix.shard }}
     steps:
@@ -109,7 +61,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: ${{ needs.ingress.outputs.execution_sha }}
+          ref: ${{ needs.identity.outputs.execution_sha }}
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
