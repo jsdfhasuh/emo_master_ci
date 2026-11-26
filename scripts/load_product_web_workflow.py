@@ -6,7 +6,7 @@ import subprocess
 import yaml
 
 WORKFLOW = Path(".github/workflows/web-panel-ci.yml")
-PRODUCT_SHA = "5b08d7455b665ba1ac83f46890c83194bc92014f"
+PRODUCT_SHA = "21b324602842c24001f1c29b6b469efabf23728e"
 WORKFLOW_BLOB = "ef1c2ee03cc391475816d5309ad44a5b12cf6448"
 PROFILES = {
     "web-panel": (["ubuntu-latest", "windows-latest"], 23),
