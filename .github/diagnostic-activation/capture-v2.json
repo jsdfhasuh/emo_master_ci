@@ -1,4 +1,5 @@
 {
   "product_sha": "533aa64a72fff55f6339cf837114e5ca9255622b",
-  "scope": "full_capture_aligned_phase_journal"
+  "scope": "full_capture_aligned_phase_journal",
+  "validated_change": "bounded_output_drain"
 }

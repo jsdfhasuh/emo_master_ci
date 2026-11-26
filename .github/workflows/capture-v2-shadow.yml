@@ -110,7 +110,8 @@ jobs:
           revision = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=DEVNULL, text=True).strip()
           controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller"
           activation = json.loads((controller / ".github/diagnostic-activation/capture-v2.json").read_text(encoding="utf-8"))
-          if activation != {"product_sha": os.environ["SOURCE_SHA"], "scope": "full_capture_aligned_phase_journal"}:
+          if activation != {"product_sha": os.environ["SOURCE_SHA"], "scope": "full_capture_aligned_phase_journal",
+                            "validated_change": "bounded_output_drain"}:
               raise SystemExit("capture_v2=activation_mismatch")
           if revision != os.environ["SOURCE_SHA"]:
               raise SystemExit("capture_v2=pin_mismatch")
