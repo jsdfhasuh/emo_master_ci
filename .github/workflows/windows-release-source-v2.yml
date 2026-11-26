@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: release-source-5da12339-v0.6.6
+  group: release-source-7fccb498-v0.6.6
   cancel-in-progress: false
 jobs:
   validate:
@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 110
     env:
-      EXPECTED_PRODUCT_SHA: 5da12339c74b3517ea12946747c3f72c2c8ed98d
+      EXPECTED_PRODUCT_SHA: 7fccb4988ad0e4abd390110dbb29c80151f5bb3b
       RELEASE_TAG: v0.6.6
       QT_QPA_PLATFORM: windows
     steps:

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-SOURCE = "533aa64a72fff55f6339cf837114e5ca9255622b"
+SOURCE = "7fccb4988ad0e4abd390110dbb29c80151f5bb3b"
 RECIPE = ".github/workflows/runtime-a18-diagnostics.yml"
 # (start line, end line inclusive, shell), exact UTF-8 workflow text after git checkout.
 SPANS = [(35, 35, 'pwsh'), (39, 40, 'pwsh'), (45, 47, 'pwsh'), (54, 90, 'python'), (96, 99, 'pwsh')]

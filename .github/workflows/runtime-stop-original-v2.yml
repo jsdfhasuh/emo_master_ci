@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
+      SOURCE_SHA: 7fccb4988ad0e4abd390110dbb29c80151f5bb3b
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'

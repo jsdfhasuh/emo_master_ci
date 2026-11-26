@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-SOURCE = "533aa64a72fff55f6339cf837114e5ca9255622b"
+SOURCE = "7fccb4988ad0e4abd390110dbb29c80151f5bb3b"
 RECIPE = ".github/workflows/runtime-stop-diagnostics.yml"
 # (start line, end line inclusive, shell), exact UTF-8 workflow text after git checkout.
 SPANS = [(30, 30, 'pwsh'), (34, 51, 'python'), (56, 59, 'pwsh'), (64, 78, 'python'), (85, 107, 'python')]
