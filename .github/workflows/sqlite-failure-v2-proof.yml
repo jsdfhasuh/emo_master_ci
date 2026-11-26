@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
+      SOURCE_SHA: 7fccb4988ad0e4abd390110dbb29c80151f5bb3b
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -95,7 +95,7 @@ jobs:
               return checkpoints[name]
           try:
               activation = json.loads((Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / ".github" / "diagnostic-activation" / "sqlite-failure-observer-v2.json").read_text(encoding="utf-8"))
-              if activation != {"product_sha": os.environ["SOURCE_SHA"], "profile": "sqlite-failure-observer-v2-stable-timing"}:
+              if activation != {"product_sha": os.environ["SOURCE_SHA"], "profile": "sqlite-failure-observer-v2-sealed-result-probe"}:
                   raise ValueError
               head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
               if head != os.environ["SOURCE_SHA"]:
@@ -106,11 +106,12 @@ jobs:
               if not rc:
                   p = phase("observed", ["-m","pytest","-q","-p","scripts.r3_sqlite_failure_diagnostics",
                             "--sqlite-failure-diagnostics",str(root / "runtime-sqlite-failure-diagnostics.json"),
-                            "--sqlite-failure-call-details", "-p", "sqlite_phase_journal",
+                            "--sqlite-failure-call-details", "-p", "sqlite_phase_journal", "-p", "sqlite_dispatch_failure_probe",
                             "--junitxml", str(root / "sqlite-failure-observed.xml")], 90*60,
                             {"PYTHONPATH": os.pathsep.join(filter(None, (str(Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"), os.environ.get("PYTHONPATH")))),
                              "EMO_SQLITE_PHASE_JOURNAL": str(root / "sqlite-failure-phases.jsonl"),
-                             "EMO_SQLITE_IMMEDIATE_FAILURES": "1"})
+                             "EMO_SQLITE_IMMEDIATE_FAILURES": "1",
+                             "EMO_PRIVATE_DISPATCH_TRACE": str(root / "sqlite-failure-dispatch-result.json")})
                   v = phase("evidence-validation", ["-c", OBS], 30, {"ORIGINAL_TEST_STEP":"success" if p==0 else "failure"})
                   d = phase("durable-controls", ["scripts/r3_sqlite_controls.py","--repo",str(Path.cwd()),
                             "--output",str(root / "runtime-sqlite-control-evidence"),"--case-timeout","30"], 240)
@@ -137,6 +138,7 @@ jobs:
           allowed = {"pytest-phases.jsonl": (root / "sqlite-failure-phases.jsonl", 64*mib, False),
                      "stage-report.json": (root / "sqlite-failure-status.json", 2048, False),
                      "pytest-junit.xml": (root / "sqlite-failure-observed.xml", 12*mib, False),
+                     "dispatch-result.json": (root / "sqlite-failure-dispatch-result.json", 16*1024, False),
                      "failure-observer.json": (root / "runtime-sqlite-failure-diagnostics.json", mib, False),
                      "control-summary.json": (root / "runtime-sqlite-control-evidence" / "summary.json", mib, False)}
           allowed.update({f"{k}.log": (root / f"sqlite-failure-{k}.log", cap, True)
