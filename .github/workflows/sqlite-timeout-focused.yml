@@ -57,7 +57,7 @@ jobs:
                   (Path(os.environ["RUNNER_TEMP"]) / "sqlite-failure-age.exe").write_bytes(bundle.read("age/age.exe"))
           except Exception:
               raise SystemExit("sqlite_failure_v2=tool_install_failed") from None
-      - name: Run the two exact SQLite timeout indicators separately
+      - name: Run both exact UI cases with phase and JUnit only
         id: workload
         shell: python
         run: |
@@ -92,8 +92,6 @@ jobs:
                       config={"PYTHONPATH":os.pathsep.join(filter(None,(str(plugin),os.environ.get("PYTHONPATH")))),
                               "EMO_SQLITE_PHASE_JOURNAL":str(root / f"canvas-{name}.jsonl")}
                       records[name]=execute(name,["-m","pytest","-q",target,"-p","sqlite_phase_journal",
-                                                   "-p","scripts.r3_sqlite_failure_diagnostics","--sqlite-failure-call-details",
-                                                   "--sqlite-failure-diagnostics",str(root / f"observer-{name}.json"),
                                                    "-o","faulthandler_timeout=25",
                                                    "--junitxml",str(root / f"canvas-{name}.xml")],120,config)
           finally:
@@ -119,7 +117,6 @@ jobs:
           for name in names:
               allowed.update({f"{name}.xml":(root/f"canvas-{name}.xml",mib,False),
                               f"{name}.jsonl":(root/f"canvas-{name}.jsonl",256*1024,False),
-                              f"{name}.observer.json":(root/f"observer-{name}.json",mib,False),
                               f"{name}.log":(root/f"sqlite-failure-{name}.log",512*1024,True)})
           output = root / "sqlite-failure-evidence.tar.age"
           def bounded(path, cap, tail):
