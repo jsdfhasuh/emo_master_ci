@@ -1,0 +1,191 @@
+name: Windows SQLite timeout focused V2
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: [.github/workflows/sqlite-timeout-focused.yml]
+concurrency:
+  group: windows-canvas-150-baseline-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  control:
+    if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/mainline-ci-migration-20261124'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: product
+    env:
+      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: product
+          repository: jsdfhasuh/emo_master
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10"
+      - id: bootstrap
+        name: Install digest-pinned Windows age and validate V2 recipient
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, re, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("sqlite_failure_v2=recipient_mismatch")
+          try:
+              with urlopen("https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip", timeout=50) as response:
+                  data = response.read(12 * 1024 * 1024 + 1)
+              if hashlib.sha256(data).hexdigest() != "46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+                  raise ValueError
+              with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+                  (Path(os.environ["RUNNER_TEMP"]) / "sqlite-failure-age.exe").write_bytes(bundle.read("age/age.exe"))
+          except Exception:
+              raise SystemExit("sqlite_failure_v2=tool_install_failed") from None
+      - name: Run the two exact SQLite timeout indicators separately
+        id: workload
+        shell: python
+        run: |
+          import json, os, subprocess, sys
+          from pathlib import Path
+
+          root=Path(os.environ["RUNNER_TEMP"])
+          actual=subprocess.check_output(["git","rev-parse","HEAD"], text=True,stderr=subprocess.DEVNULL).strip()
+          if actual!=os.environ["SOURCE_SHA"]:
+              raise SystemExit("sqlite_timeout_focused=source_identity_failed")
+          records={}
+          def execute(name,args,limit,extra=None):
+              with (root / f"sqlite-failure-{name}.log").open("xb") as log:
+                  child=subprocess.Popen([sys.executable,*args],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,
+                                         env={**os.environ,"GITHUB_WORKSPACE":str(Path.cwd()),**(extra or {})})
+                  try:
+                      return child.wait(timeout=limit)
+                  except subprocess.TimeoutExpired:
+                      subprocess.run([str(Path(os.environ["SystemRoot"])/"System32"/"taskkill.exe"),"/PID",str(child.pid),"/T","/F"],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
+                      if child.poll() is None:
+                          child.kill()
+                      child.wait(timeout=10)
+                      return 124
+          targets={"preview":"tests/ui/page_designer/test_current_job_viewing.py::testPreviewReusesOneSessionHidesWithWorkspaceAndClosesViewing",
+                   "palette":"tests/ui/page_designer/test_palette.py::testPaletteLayoutSettles[300-390-True]"}
+          plugin=Path(os.environ["GITHUB_WORKSPACE"])/"controller"/"scripts"
+          try:
+              records["dependencies"]=execute("dependencies",["-m","pip","install","-r","requirements-dev.txt"],600)
+              if records["dependencies"]==0:
+                  for name, target in targets.items():
+                      config={"PYTHONPATH":os.pathsep.join(filter(None,(str(plugin),os.environ.get("PYTHONPATH")))),
+                              "EMO_SQLITE_PHASE_JOURNAL":str(root / f"canvas-{name}.jsonl")}
+                      records[name]=execute(name,["-m","pytest","-q",target,"-p","sqlite_phase_journal",
+                                                   "-p","scripts.r3_sqlite_failure_diagnostics","--sqlite-failure-call-details",
+                                                   "--sqlite-failure-diagnostics",str(root / f"observer-{name}.json"),
+                                                   "-o","faulthandler_timeout=25",
+                                                   "--junitxml",str(root / f"canvas-{name}.xml")],120,config)
+          finally:
+              (root/"sqlite-failure-status.json").write_text(json.dumps(records),encoding="ascii")
+          ok=set(records)=={"dependencies","preview","palette"} and all(v==0 for v in records.values())
+          print("sqlite_timeout_focused=" + ("success" if ok else "non_success"))
+          sys.exit(not ok)
+      - name: Seal bounded V2 evidence without a plaintext archive
+        id: seal
+        if: ${{ always() && steps.bootstrap.outcome == 'success' }}
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          ORIGINAL_OUTCOME: ${{ steps.workload.outcome }}
+        run: |
+          import hashlib, io, json, os, re, stat, subprocess, tarfile
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          mib = 1024 * 1024
+          names=("preview","palette")
+          allowed={"stage-report.json":(root/"sqlite-failure-status.json",2048,False),
+                   "dependencies.log":(root/"sqlite-failure-dependencies.log",512*1024,True)}
+          for name in names:
+              allowed.update({f"{name}.xml":(root/f"canvas-{name}.xml",mib,False),
+                              f"{name}.jsonl":(root/f"canvas-{name}.jsonl",256*1024,False),
+                              f"{name}.observer.json":(root/f"observer-{name}.json",mib,False),
+                              f"{name}.log":(root/f"sqlite-failure-{name}.log",512*1024,True)})
+          output = root / "sqlite-failure-evidence.tar.age"
+          def bounded(path, cap, tail):
+              try:
+                  original = path.lstat()
+              except FileNotFoundError:
+                  return None
+              if not stat.S_ISREG(original.st_mode) or original.st_nlink != 1 or getattr(original, "st_file_attributes", 0) & 0x400:
+                  raise ValueError
+              for parent in path.parents:
+                  attr = parent.lstat()
+                  if not stat.S_ISDIR(attr.st_mode) or getattr(attr, "st_file_attributes", 0) & 0x400:
+                      raise ValueError
+              with path.open("rb") as handle:
+                  current = os.fstat(handle.fileno())
+                  if not os.path.samestat(original, current) or current.st_size > cap and not tail:
+                      raise ValueError
+                  marker = b"[leading bytes omitted]\n"
+                  if current.st_size > cap:
+                      handle.seek(current.st_size - cap + len(marker))
+                      return marker + handle.read(cap - len(marker))
+                  data = handle.read(cap+1)
+                  if len(data) != current.st_size:
+                      raise ValueError
+                  return data
+          try:
+              recipient = os.environ["RECIPIENT"]
+              assert re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient)
+              assert hashlib.sha256(recipient.encode("ascii")).hexdigest() == "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87"
+              meta = dict(version=1, encryption_profile="V2", suite_family="diagnostics",
+                          source_sha=os.environ["SOURCE_SHA"], workflow_sha=os.environ["GITHUB_WORKFLOW_SHA"],
+                          run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                          repository_id=os.environ["GITHUB_REPOSITORY_ID"], job="sqlite-timeout-focused",
+                          outcome=os.environ["ORIGINAL_OUTCOME"], packager_sha="", files={})
+              payloads = {n: data for n, (p, cap, tail) in allowed.items() if (data := bounded(p, cap, tail)) is not None}
+              if "stage-report.json" not in payloads and meta["outcome"] != "success":
+                  payloads["stage-report.json"] = json.dumps({"status": "incomplete", "outcome": meta["outcome"]}).encode("ascii")
+              assert "stage-report.json" in payloads
+              if meta["outcome"] == "success":
+                  assert all(f"{name}.{extension}" in payloads for name in names for extension in ("xml","jsonl"))
+                  assert all(json.loads(payloads[f"{name}.jsonl"].rstrip(b"\n").rsplit(b"\n", 1)[-1])["event"] == "session_finish" for name in names)
+              assert sum(map(len, payloads.values())) <= 8*mib
+              with subprocess.Popen([str(root / "sqlite-failure-age.exe"), "-r", recipient, "-o", str(output)],
+                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as child:
+                  with child.stdin as pipe, tarfile.open(fileobj=pipe, mode="w|") as archive:
+                      for name, content in sorted(payloads.items()):
+                          meta["files"][name] = dict(size=len(content), sha256=hashlib.sha256(content).hexdigest())
+                      payloads["manifest.json"] = json.dumps(meta, sort_keys=True).encode("ascii")
+                      for name, content in sorted(payloads.items()):
+                          member = tarfile.TarInfo(name)
+                          member.size, member.mode = len(content), 0o600
+                          archive.addfile(member, io.BytesIO(content))
+                  if child.wait(timeout=45) != 0:
+                      raise ValueError
+              with output.open("rb") as encrypted:
+                  if encrypted.readline(64) != b"age-encryption.org/v1\n":
+                      raise ValueError
+          except Exception:
+              output.unlink(missing_ok=True)
+              raise SystemExit("sqlite_failure_v2=seal_failed") from None
+      - name: Retain ciphertext only
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: sqlite-timeout-focused-v2-${{ env.SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-failure-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
