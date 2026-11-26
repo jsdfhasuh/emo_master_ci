@@ -1,1 +1,5 @@
-{"fixture":"mainline-web-v2-rebaseline","product_sha":"533aa64a72fff55f6339cf837114e5ca9255622b","acceptance":false}
+{
+  "fixture": "mainline-web-v2-exact-pin",
+  "product_sha": "533aa64a72fff55f6339cf837114e5ca9255622b",
+  "acceptance": false
+}

@@ -1,5 +1,7 @@
 """Extract executable Web/Runtime steps from the reviewed product workflow."""
 from hashlib import sha1
+import os
+import re
 from pathlib import Path
 import subprocess
 
@@ -14,6 +16,13 @@ PROFILES = {
 }
 
 
+def expected_product_sha():
+    sha = os.environ.get("EXPECTED_WEB_PRODUCT_SHA", PRODUCT_SHA)
+    if not re.fullmatch(r"[0-9a-f]{40}", sha) or sha == "0" * 40:
+        raise ValueError("invalid approved product SHA")
+    return sha
+
+
 def load_recipe(product):
     git = ["git", "-C", str(product)]
     def read(*args):
@@ -21,7 +30,7 @@ def load_recipe(product):
         if result.returncode:
             raise ValueError("product Git identity unavailable")
         return result.stdout
-    if read("rev-parse", "HEAD").strip().decode("ascii") != PRODUCT_SHA:
+    if read("rev-parse", "HEAD").strip().decode("ascii") != expected_product_sha():
         raise ValueError("unexpected product SHA")
     raw = read("show", f"HEAD:{WORKFLOW.as_posix()}")
     header = f"blob {len(raw)}\0".encode()

@@ -30,10 +30,24 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: controller
           persist-credentials: false
+      - name: Load exact product SHA from the approved activation
+        id: source-pin
+        shell: python
+        run: |
+          import json, os, re
+          from pathlib import Path
+          value = json.loads(Path("controller/.github/diagnostic-activation/web-v2.json").read_text(encoding="ascii"))
+          sha = value.get("product_sha")
+          if (set(value) != {"product_sha","fixture","acceptance"} or
+              value.get("fixture") != "mainline-web-v2-exact-pin" or value.get("acceptance") is not False or
+              not isinstance(sha,str) or not re.fullmatch(r"[0-9a-f]{40}",sha) or sha=="0"*40):
+              raise SystemExit("web_workload=bad_activation")
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="ascii") as output:
+              output.write("sha="+sha+"\n")
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: 21b324602842c24001f1c29b6b469efabf23728e
+          ref: ${{ steps.source-pin.outputs.sha }}
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -57,6 +71,7 @@ jobs:
         timeout-minutes: ${{ matrix.timeout }}
         shell: python
         env:
+          EXPECTED_WEB_PRODUCT_SHA: ${{ steps.source-pin.outputs.sha }}
           WEB_JOB: ${{ matrix.job }}
           WEB_PLATFORM: ${{ matrix.os }}
           WEB_EVENT: ${{ matrix.event }}
@@ -81,6 +96,7 @@ jobs:
         if: ${{ always() && steps.prepare.outcome == 'success' }}
         shell: python
         env:
+          EXPECTED_WEB_PRODUCT_SHA: ${{ steps.source-pin.outputs.sha }}
           WEB_PROFILE: ${{ matrix.profile }}
           WEB_OUTCOME: ${{ steps.workload.outcome }}
           WEB_V2_RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
@@ -90,6 +106,8 @@ jobs:
           import subprocess
           import sys
           scratch = Path(os.environ["RUNNER_TEMP"])
+          if subprocess.check_output(["git","-C","product","rev-parse","HEAD"],text=True).strip() != os.environ.get("EXPECTED_WEB_PRODUCT_SHA"):
+              raise SystemExit("web_v2_evidence=wrong_product_sha")
           raw = scratch / "web-raw"
           raw.mkdir(exist_ok=True)
           binary = scratch / "web-age" / ("age.exe" if os.name == "nt" else "age")

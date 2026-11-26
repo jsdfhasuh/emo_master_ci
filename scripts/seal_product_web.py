@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 
-from load_product_web_workflow import PRODUCT_SHA
+from load_product_web_workflow import expected_product_sha
 
 RECIPIENT_FINGERPRINT = "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87"
 
@@ -24,7 +24,7 @@ def validate_recipient(recipient):
 def seal(root, output, age):
     recipient = os.environ.get("WEB_V2_RECIPIENT", "")
     validate_recipient(recipient)
-    manifest = dict(product_sha=PRODUCT_SHA, workflow_sha=os.environ["GITHUB_WORKFLOW_SHA"],
+    manifest = dict(product_sha=expected_product_sha(), workflow_sha=os.environ["GITHUB_WORKFLOW_SHA"],
                     run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"],
                     profile=os.environ["WEB_PROFILE"], outcome=os.environ["WEB_OUTCOME"], files={})
     if not re.fullmatch(r"[0-9a-f]{40}", manifest["workflow_sha"]) or any(
