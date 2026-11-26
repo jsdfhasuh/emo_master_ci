@@ -1,5 +1,4 @@
 {
-  "product_sha": "e1c19fcdbbee523b51c34ece905d45152033dfda",
-  "scope": "full_capture_after_focused_regressions",
-  "prior_scope_run": 45566403989
+  "product_sha": "533aa64a72fff55f6339cf837114e5ca9255622b",
+  "scope": "full_capture_aligned_phase_journal"
 }

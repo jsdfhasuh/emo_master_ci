@@ -20,13 +20,27 @@ jobs:
     # deadlines, worker target, SQLite durability and assertions stay intact.
     runs-on: windows-latest
     timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: product
     env:
+      SOURCE_SHA: 533aa64a72fff55f6339cf837114e5ca9255622b
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/sqlite_phase_journal.py
+            .github/diagnostic-activation/capture-v2.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
           repository: jsdfhasuh/emo_master
-          ref: e1c19fcdbbee523b51c34ece905d45152033dfda
+          ref: ${{ env.SOURCE_SHA }}
+          path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
@@ -94,7 +108,11 @@ jobs:
           if hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
               raise SystemExit("capture_v2=recipient_mismatch")
           revision = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=DEVNULL, text=True).strip()
-          if revision != "e1c19fcdbbee523b51c34ece905d45152033dfda":
+          controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller"
+          activation = json.loads((controller / ".github/diagnostic-activation/capture-v2.json").read_text(encoding="utf-8"))
+          if activation != {"product_sha": os.environ["SOURCE_SHA"], "scope": "full_capture_aligned_phase_journal"}:
+              raise SystemExit("capture_v2=activation_mismatch")
+          if revision != os.environ["SOURCE_SHA"]:
               raise SystemExit("capture_v2=pin_mismatch")
           record = {"role": "diagnostic_only", "source_sha": revision,
                     "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"], "run": os.environ["GITHUB_RUN_ID"],
@@ -112,50 +130,36 @@ jobs:
           compression-level: 0
       - name: Run original pytest suite with private bounded observations
         id: observed_tests
-        timeout-minutes: 82
+        timeout-minutes: 96
         shell: python
         run: |
           import os, subprocess, sys, threading
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
-          plugin = root / "capture_phase_evidence.py"
-          plugin.write_text(
-              'import json, os\n'
-              'from pathlib import Path\n'
-              '_journal = Path(os.environ["RUNNER_TEMP"]).joinpath("pytest-phases.jsonl").open("xb", buffering=0)\n'
-              '_remaining = 24 * 1024 * 1024\n'
-              'def _emit(event, **values):\n'
-              '    global _remaining\n'
-              '    line = (json.dumps(dict(event=event, **values), ensure_ascii=True) + "\\n").encode("ascii")\n'
-              '    if len(line) <= _remaining:\n'
-              '        _journal.write(line)\n'
-              '        _remaining -= len(line)\n'
-              'def pytest_collection_finish(session):\n'
-              '    _emit("collection_finish", collected=session.testscollected or len(session.items))\n'
-              'def pytest_runtest_logreport(report):\n'
-              '    _emit("phase_end", nodeid=report.nodeid[:512], phase=report.when, outcome=report.outcome, seconds=report.duration)\n'
-              'def pytest_sessionfinish(session, exitstatus):\n'
-              '    _emit("session_finish", exitstatus=int(exitstatus))\n',
-              encoding="utf-8")
+          controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"
           env = dict(os.environ)
-          env["PYTHONPATH"] = str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+          env["EMO_SQLITE_PHASE_JOURNAL"] = str(root / "pytest-phases.jsonl")
+          env["EMO_SQLITE_IMMEDIATE_FAILURES"] = "1"
+          env["GITHUB_WORKSPACE"] = str(Path.cwd())
+          env["PYTHONPATH"] = str(controller) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
           command = [sys.executable, "-m", "pytest", "-q",
                      "-p", "scripts.r3_sqlite_capture_diagnostics", "--sqlite-capture-diagnostics",
                      str(root / "runtime-capture-diagnostics.json"),
-                     "-o", "faulthandler_timeout=90", "-p", "capture_phase_evidence", "--junitxml", str(root / "observed-junit.xml")]
+                     "-o", "faulthandler_timeout=90", "-p", "sqlite_phase_journal", "--junitxml", str(root / "observed-junit.xml")]
           worker = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           def drain():
               remaining = 4 * 1024 * 1024
               with (root / "observed-output.log").open("xb", buffering=0) as log:
                   while chunk := worker.stdout.read1(65536):
-                      kept = chunk[:remaining]
-                      log.write(kept)
-                      remaining -= len(kept)
+                      tail.extend(chunk)
+                      if len(tail) > 4*1024*1024:
+                          del tail[:-4*1024*1024]
+                  log.write(tail)
           reader = threading.Thread(target=drain, daemon=True)
           reader.start()
           try:
-              status = worker.wait(timeout=80 * 60)
+              status = worker.wait(timeout=90 * 60)
           except subprocess.TimeoutExpired:
               subprocess.run(["taskkill", "/PID", str(worker.pid), "/T", "/F"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
@@ -214,7 +218,7 @@ jobs:
               raise SystemExit("capture_v2=recipient_mismatch")
           name = "runtime-capture-diagnostics.json"
           caps = {name: 1024 * 1024, "observed-output.log": 4 * 1024 * 1024,
-                  "pytest-phases.jsonl": 24 * 1024 * 1024, "observed-junit.xml": 12 * 1024 * 1024}
+                  "pytest-phases.jsonl": 64 * 1024 * 1024, "observed-junit.xml": 12 * 1024 * 1024}
           files = {}
           for item, cap in caps.items():
               source = root / item
@@ -237,7 +241,7 @@ jobs:
           }, sort_keys=True).encode("ascii")
           meta = {
               "version": 1, "encryption_profile": "V2", "suite_family": "diagnostics",
-              "source_sha": "e1c19fcdbbee523b51c34ece905d45152033dfda",
+              "source_sha": os.environ["SOURCE_SHA"],
               "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
               "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
