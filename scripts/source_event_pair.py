@@ -55,7 +55,15 @@ def bind(run, artifact, api):
              p['merge_commit_sha']==ref('pull/26/merge')==execution)
         need([x['sha'] for x in api('git/commits/'+execution)['parents']]==[BASE,head])
     else:
-        need(row['pull_requests']==[])
+        need(row['actor']['id']==row['triggering_actor']['id']==49879362)
+        # An explicit workflow_dispatch on this branch can carry PR association
+        # metadata. That association is not an event or merge execution identity.
+        links = row['pull_requests']
+        need(type(links) is list and len(links)==1)
+        linked=links[0]
+        need(linked['number']==26 and linked['head']['repo']['id']==linked['base']['repo']['id']==PRODUCT
+             and linked['head']['ref']==branch and linked['head']['sha']==head
+             and linked['base']['ref']=='main' and linked['base']['sha']==ref('heads/main')==BASE)
     need(api('contents/'+path+'?ref='+execution)['sha']==blob)
     return execution
 
