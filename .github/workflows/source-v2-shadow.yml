@@ -23,6 +23,7 @@ jobs:
           - {platform: linux, os: ubuntu-latest, job_timeout: 65}
           - {platform: windows, os: windows-latest, job_timeout: 95}
     env:
+      EXPECTED_SOURCE_SHA: 7fccb4988ad0e4abd390110dbb29c80151f5bb3b
       SOURCE_PLATFORM: ${{ matrix.platform }}
       SOURCE_SHARD: ${{ matrix.shard }}
     steps:
@@ -34,7 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jsdfhasuh/emo_master
-          ref: ca57a5641686446360034b8f49cd31286c0a1e2a
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
           path: product
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
