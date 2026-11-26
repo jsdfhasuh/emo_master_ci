@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: ffb006f58de1c33de34def7c60a9c3ce6ae21b07
+      SOURCE_SHA: 08c390cfb0a9935490bc935e80b125caa9ba83d1
       QT_QPA_PLATFORM: windows
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'

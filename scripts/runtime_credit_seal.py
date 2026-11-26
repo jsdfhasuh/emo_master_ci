@@ -29,7 +29,7 @@ def main():
     if hashlib.sha256(r.encode("ascii")).hexdigest()!=RECIPIENT_HASH:raise ValueError
     if not base.is_dir() or not safe_file(base/"status.json"):raise ValueError
     files=[base/"status.json",*sorted(base.glob("stage-*.log"))]
-    report=scratch/"export-credit-public.json"
+    report=scratch/"export-credit-sealed.json"
     if report.exists():files.append(report)
     evidence=scratch/("export-credit-"+os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_RUN_ATTEMPT"])
     if evidence.exists(): files.extend(add_tree(evidence))

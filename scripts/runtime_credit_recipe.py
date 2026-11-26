@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-SOURCE = "ffb006f58de1c33de34def7c60a9c3ce6ae21b07"
+SOURCE = "08c390cfb0a9935490bc935e80b125caa9ba83d1"
 RECIPE = ".github/workflows/runtime-credit-diagnostics.yml"
 # (start line, end line inclusive, shell), exact UTF-8 workflow text after git checkout.
 SPANS = [(52, 52, 'pwsh'), (56, 73, 'python'), (78, 80, 'pwsh'), (87, 89, 'pwsh')]
@@ -21,6 +21,12 @@ def steps(text):
     return [(shell, "\n".join(line[10:] for line in lines[first-1:last])+"\n"
              if first != last else lines[first-1].split("run: ", 1)[1]+"\n")
             for first,last,shell in SPANS]
+
+def route_report_into_ciphertext(script):
+    output = '"$env:RUNNER_TEMP/export-credit-public.json"'
+    if script.count(output) != 1 or "--sealed-output-only" in script:
+        raise ValueError("report_route_identity")
+    return script.replace(output, '"$env:RUNNER_TEMP/export-credit-sealed.json" --sealed-output-only', 1)
 
 def child_environment(parent, root, product):
     keep = {"SYSTEMROOT","WINDIR","SYSTEMDRIVE","COMSPEC","PATHEXT","PATH","USERPROFILE",
@@ -58,6 +64,7 @@ def main():
         if i < 3 and any(row.get("rc")!=0 for row in receipt["stages"]):
             receipt["stages"].append({"state":"skipped"});save();continue
         if i==3:
+            script=route_report_into_ciphertext(script)
             env["ORIGINAL_CONTROL_STEP"]={0:"success",124:"failure",None:"skipped"}.get(receipt["stages"][2].get("rc"),"failure")
         f=base/("recipe."+("py" if shell=="python" else "ps1"))
         f.write_text(script+("\nexit $LASTEXITCODE\n" if i==0 else ""),encoding="utf-8")
@@ -70,7 +77,7 @@ def main():
                 subprocess.run([str(Path(os.environ["SystemRoot"])/"System32/taskkill.exe"),"/F","/T","/PID",str(p.pid)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20,check=True)
                 p.wait(timeout=15);rc=124
         row.update(state="finished",rc=rc,end=time.time());save()
-    report=json.loads((scratch/"export-credit-public.json").read_text(encoding="utf-8"))
+    report=json.loads((scratch/"export-credit-sealed.json").read_text(encoding="utf-8"))
     if (any(s.get("rc")!=0 for s in receipt["stages"]) or report.get("expected_sha")!=SOURCE
         or report.get("measurement_status")!="VALID" or report.get("observation_status")!="COMPLETE"):
         return 1
