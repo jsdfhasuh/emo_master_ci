@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-SOURCE = "533aa64a72fff55f6339cf837114e5ca9255622b"
+SOURCE = "23872a853033d8bdb7021c4c4c1238e034ad35f1"
 RECIPE = ".github/workflows/runtime-credit-diagnostics.yml"
 # (start line, end line inclusive, shell), exact UTF-8 workflow text after git checkout.
 SPANS = [(52, 52, 'pwsh'), (56, 73, 'python'), (78, 80, 'pwsh'), (87, 89, 'pwsh')]
