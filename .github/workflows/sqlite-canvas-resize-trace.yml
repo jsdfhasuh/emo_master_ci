@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 21b324602842c24001f1c29b6b469efabf23728e
+      SOURCE_SHA: 083b6e6820eb9625e3f9b0c1df9105b561fd26ff
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -57,7 +57,7 @@ jobs:
                   (Path(os.environ["RUNNER_TEMP"]) / "sqlite-failure-age.exe").write_bytes(bundle.read("age/age.exe"))
           except Exception:
               raise SystemExit("sqlite_failure_v2=tool_install_failed") from None
-      - name: Trace the original viewport under three explicit scale conditions
+      - name: Retest the original viewport module under three scale conditions
         id: workload
         shell: python
         run: |
@@ -82,7 +82,7 @@ jobs:
                           child.kill()
                       child.wait(timeout=10)
                       return 124
-          target="tests/ui/page_designer/test_canvas_viewport.py::testManualViewSurvivesRefreshAndFitRestoresAutomaticMode"
+          target="tests/ui/page_designer/test_canvas_viewport.py"
           plugin=Path(os.environ["GITHUB_WORKSPACE"])/"controller"/"scripts"
           try:
               records["dependencies"]=execute("dependencies",["-m","pip","install","-r","requirements-dev.txt"],600)
