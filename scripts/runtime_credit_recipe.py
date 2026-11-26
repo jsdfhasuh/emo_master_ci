@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-SOURCE = "238ae348cfe61d2e8b547e08430a05338decba34"
+SOURCE = "7fccb4988ad0e4abd390110dbb29c80151f5bb3b"
 RECIPE = ".github/workflows/runtime-credit-diagnostics.yml"
 # (start line, end line inclusive, shell), exact UTF-8 workflow text after git checkout.
 SPANS = [(52, 52, 'pwsh'), (56, 73, 'python'), (78, 80, 'pwsh'), (87, 89, 'pwsh')]
@@ -43,7 +43,7 @@ def main():
     product = Path(sys.argv[1]).resolve()
     controller = Path(__file__).resolve().parents[1]
     requested = json.loads((controller/".github/diagnostic-activation/credit-original-v2.json").read_text(encoding="utf-8"))
-    if requested != {"product_sha":SOURCE,"profile":"credit-original-v2-hub-focus"}:
+    if requested != {"product_sha":SOURCE,"profile":"credit-original-v2-file-boundaries"}:
         raise ValueError("activation_identity")
     public_head = subprocess.check_output(["git","-C",str(controller),"rev-parse","HEAD"],text=True).strip()
     if public_head != os.environ["GITHUB_WORKFLOW_SHA_FIXED"]:
@@ -65,8 +65,10 @@ def main():
             receipt["stages"].append({"state":"skipped"});save();continue
         if i==2:
             env["EMO_CREDIT_HUB_TICK_TRACE"]="1"
+            env["EMO_CREDIT_ASSET_FILE_SUBPHASES"]="1"
         if i==3:
             env.pop("EMO_CREDIT_HUB_TICK_TRACE",None)
+            env.pop("EMO_CREDIT_ASSET_FILE_SUBPHASES",None)
             script=route_report_into_ciphertext(script)
             env["ORIGINAL_CONTROL_STEP"]={0:"success",124:"failure",None:"skipped"}.get(receipt["stages"][2].get("rc"),"failure")
         f=base/("recipe."+("py" if shell=="python" else "ps1"))
@@ -82,9 +84,11 @@ def main():
         row.update(state="finished",rc=rc,end=time.time());save()
     observed=scratch/("export-credit-"+env["GITHUB_RUN_ID"]+"-"+env["GITHUB_RUN_ATTEMPT"])/"trial-3-credit-off"/"hub-tick-observations.json"
     receipt["hub_probe_payload"]="present" if observed.is_file() else "unavailable"
+    receipt["asset_file_subphase_arms"]=sum((observed.parent.parent/f"trial-{p}-credit-{mode}"/"asset-file-subphases.json").is_file()
+        for p,mode in enumerate(("off","on","on","off")))
     save()
     report=json.loads((scratch/"export-credit-sealed.json").read_text(encoding="utf-8"))
-    if (receipt["hub_probe_payload"]!="present" or any(s.get("rc")!=0 for s in receipt["stages"]) or report.get("expected_sha")!=SOURCE
+    if (receipt["hub_probe_payload"]!="present" or receipt["asset_file_subphase_arms"]!=4 or any(s.get("rc")!=0 for s in receipt["stages"]) or report.get("expected_sha")!=SOURCE
         or report.get("measurement_status")!="VALID" or report.get("observation_status")!="COMPLETE"):
         return 1
     return 0
