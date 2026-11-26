@@ -64,9 +64,16 @@ def main():
             env["PYTHONPATH"]=str(controller/"scripts")
             env["EMO_SQLITE_PHASE_JOURNAL"]=str(scratch/"observed-phases.jsonl")
             env["EMO_SQLITE_IMMEDIATE_FAILURES"]="1"
-            env["PYTEST_ADDOPTS"] = '-p sqlite_phase_journal --junitxml="' + str(scratch/"observed-junit.xml") + '"'
+            # Use explicit flags on the pinned outer pytest command only.
+            # PYTEST_ADDOPTS leaks into tests that run pytest in separate projects.
+            env["EMO_DIAG_JUNIT"] = str(scratch/"observed-junit.xml")
+            invocation = "python -m pytest -q "
+            if shell != "pwsh" or script.count(invocation) != 1:
+                raise ValueError("observed_pytest_invocation")
+            script = script.replace(invocation, invocation +
+                                    '-p sqlite_phase_journal --junitxml $env:EMO_DIAG_JUNIT ', 1)
         elif i>2:
-            for name in ("PYTEST_ADDOPTS","PYTHONPATH","EMO_SQLITE_PHASE_JOURNAL","EMO_SQLITE_IMMEDIATE_FAILURES"):
+            for name in ("EMO_DIAG_JUNIT","PYTHONPATH","EMO_SQLITE_PHASE_JOURNAL","EMO_SQLITE_IMMEDIATE_FAILURES"):
                 env.pop(name, None)
         f=base/("recipe."+("py" if shell=="python" else "ps1"))
         f.write_text(script+("\nexit $LASTEXITCODE\n" if i==0 else ""),encoding="utf-8")
@@ -92,3 +99,4 @@ if __name__=="__main__":
     try: code=main()
     except Exception: code=1
     sys.exit(code)
+
