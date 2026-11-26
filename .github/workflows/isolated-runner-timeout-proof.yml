@@ -1,0 +1,14 @@
+name: Isolated hosted runner timeout proof
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: ['.github/workflows/isolated-runner-timeout-proof.yml']
+permissions: {}
+jobs:
+  proof:
+    if: github.repository_id == '1468905732' && github.actor_id == '49879362' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Sleep for hosted runner terminal proof
+        run: sleep 600
