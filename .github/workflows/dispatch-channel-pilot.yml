@@ -1,38 +1,164 @@
-name: Dispatch Channel Pilot
+name: Trusted Product Source pilot
 on:
   workflow_dispatch:
     inputs:
-      product_sha:
-        description: Exact non-required product status target
+      dispatcher_run_id:
         required: true
         type: string
-      probe:
-        description: Fixed synthetic result (no product execution)
+      request_artifact_id:
         required: true
-        type: choice
-        options: [pass, fail]
+        type: string
 permissions: {}
 jobs:
-  pilot:
-    if: github.repository_id == '1468905732' && startsWith(github.ref, 'refs/tags/ci-dispatch-pilot-')
-    name: Dispatch pilot result
+  ingress:
+    if: >-
+      github.repository_id == '1468905732' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.sha == vars.PRODUCT_CI_APPROVED_WORKER_SHA &&
+      github.actor_id == vars.PRODUCT_CI_SHADOW_ACTOR_ID &&
+      github.run_attempt == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    outputs:
+      execution_sha: ${{ steps.bind.outputs.execution_sha }}
     steps:
-      - name: Bind exact product status target
-        shell: bash
+      - name: Bind public metadata to fixed Source candidate
+        id: bind
+        shell: python
         env:
-          REQUESTED_SHA: ${{ inputs.product_sha }}
-          APPROVED_SHA: '966d6821357b0380d328ee0b1c86243826247cdd'
+          DISPATCHER_RUN: ${{ inputs.dispatcher_run_id }}
+          REQUEST_ARTIFACT: ${{ inputs.request_artifact_id }}
+          DISPATCHER_WORKFLOW: ${{ vars.PRODUCT_CI_SHADOW_WORKFLOW_ID }}
+          APPROVED_PRODUCT_SHA: ${{ vars.PRODUCT_CI_SHADOW_SOURCE_SHA }}
         run: |
-          test "$REQUESTED_SHA" = "$APPROVED_SHA"
-      - name: Return fixed synthetic result
-        shell: bash
+          import json, os, re
+          from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+          def need(ok):
+              if not ok:
+                  raise SystemExit("source_shadow=identity_refused")
+
+          def ident(key):
+              value = os.environ[key]
+              need(bool(re.fullmatch(r"[1-9][0-9]{0,19}", value)))
+              return int(value)
+
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *_args):
+                  return None
+
+          def api(path):
+              endpoint = "https://api.github.com/repos/jsdfhasuh/emo_master/" + path
+              with build_opener(NoRedirect()).open(Request(endpoint,
+                       headers={"X-GitHub-Api-Version": "2026-03-10", "Accept": "application/vnd.github+json"}),
+                       timeout=15) as response:
+                  data = response.read(262145)
+              need(len(data) <= 262144)
+              return json.loads(data)
+
+          try:
+              run_id, aid = ident("DISPATCHER_RUN"), ident("REQUEST_ARTIFACT")
+              sha = os.environ["APPROVED_PRODUCT_SHA"]
+              need(bool(re.fullmatch(r"[0-9a-f]{40}",sha)) and sha != "0"*40)
+              branch = "dot/mainline-ci-migration-20261124"
+              run = api(f"actions/runs/{run_id}")
+              need(run["id"] == run_id and run["workflow_id"] == ident("DISPATCHER_WORKFLOW")
+                   and run["repository"]["id"] == run["head_repository"]["id"] == 1343796337
+                   and run["path"] == ".github/workflows/product-source-shadow-request.yml"
+                   and run["event"] in ("push","workflow_dispatch") and run["head_branch"] == branch
+                   and run["head_sha"] == sha and run["status"] == "completed" and run["conclusion"] == "success")
+              tip = api("git/ref/heads/"+branch)
+              need(tip["object"]["sha"] == sha)
+              artifact = api(f"actions/artifacts/{aid}")
+              attempt = run["run_attempt"]
+              need(type(attempt) is int and attempt > 0 and artifact["id"] == aid and artifact["expired"] is False
+                   and artifact["name"] == f"ci-request-{run_id}-{attempt}"
+                   and artifact["workflow_run"]["id"] == run_id
+                   and artifact["workflow_run"]["head_sha"] == sha
+                   and artifact["workflow_run"]["repository_id"] == 1343796337
+                   and bool(re.fullmatch(r"sha256:[0-9a-f]{64}",artifact["digest"])))
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as out:
+                  out.write(f"execution_sha={sha}\n")
+          except Exception:
+              raise SystemExit("source_shadow=metadata_unavailable") from None
+  source:
+    needs: ingress
+    permissions:
+      contents: read
+    name: "${{ matrix.platform }} source (${{ matrix.shard }}) / Python 3.10"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [runtime, other]
+        platform: [linux, windows]
+        include:
+          - {platform: linux, os: ubuntu-latest, job_timeout: 65}
+          - {platform: windows, os: windows-latest, job_timeout: 95}
+    env:
+      EXPECTED_SOURCE_SHA: ${{ needs.ingress.outputs.execution_sha }}
+      SOURCE_PLATFORM: ${{ matrix.platform }}
+      SOURCE_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ needs.ingress.outputs.execution_sha }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Verify V2 configuration and install fixed age
+        id: prepare
+        shell: python
         env:
-          PROBE: ${{ inputs.probe }}
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
         run: |
-          case "$PROBE" in
-            pass) exit 0 ;;
-            fail) exit 1 ;;
-            *) exit 2 ;;
-          esac
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          source = subprocess.check_output(["git","-C","product","rev-parse","HEAD"], text=True).strip()
+          if source != os.environ["EXPECTED_SOURCE_SHA"]:
+              raise SystemExit("source_shadow=checkout_mismatch")
+          subprocess.run([sys.executable, "controller/scripts/seal_product_source_v2.py", "--preflight"], check=True)
+          subprocess.run([sys.executable, "controller/scripts/install_web_age.py", str(scratch / "source-age")], check=True)
+      - name: Run exact original Source shard and retain bounded evidence
+        id: workload
+        shell: python
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          sys.exit(subprocess.run([sys.executable, "controller/scripts/run_product_source_v2.py", "product",
+                   str(scratch / "source-raw"), os.environ["SOURCE_PLATFORM"], os.environ["SOURCE_SHARD"]]).returncode)
+      - name: Seal V2 ciphertext only
+        id: seal
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' && steps.workload.outcome != 'skipped' }}
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          SOURCE_OUTCOME: ${{ steps.workload.outcome }}
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          binary = scratch / "source-age" / ("age.exe" if os.name == "nt" else "age")
+          sys.exit(subprocess.run([sys.executable, "controller/scripts/seal_product_source_v2.py", "product",
+                   str(scratch / "source-raw"), str(scratch / "source-evidence.tar.age"), str(binary)]).returncode)
+      - name: Retain source ciphertext only
+        if: ${{ !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: source-v2-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
