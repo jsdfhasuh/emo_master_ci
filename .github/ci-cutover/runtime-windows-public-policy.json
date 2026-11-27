@@ -1,0 +1,21 @@
+{
+  "route": "runtime-windows",
+  "enabled": false,
+  "origin_path": ".github/workflows/runtime-windows.yml",
+  "origin_workflow_id": 390286027,
+  "approved_emitter_blob": "c4acd471d6d8cadb8a3ea4d5a08f3d9423a02de5",
+  "trusted_manual_branches": [
+    "dot/runtime-buildonly-origin-20261127"
+  ],
+  "approved_inputs": {
+    "source_ref": "7fccb4988ad0e4abd390110dbb29c80151f5bb3b",
+    "packager_ref": "e0204fe6fe83b0f31818d88e4f296c70e230d172",
+    "source_sha": "7fccb4988ad0e4abd390110dbb29c80151f5bb3b",
+    "builder_sha": "e0204fe6fe83b0f31818d88e4f296c70e230d172"
+  },
+  "helper_blobs": {
+    ".github/workflows/emit-ci-cutover-request.yml": "e8ca828481afc4f41d0d39a014ab697f86f8f382",
+    "scripts/ci_cutover/request_emitter.py": "287bae93af96c277c76b995479a9a8d1a1518d32"
+  },
+  "expected_native_head": "8614ee1b6abc07c28311bc8c55741fb8d700625c"
+}

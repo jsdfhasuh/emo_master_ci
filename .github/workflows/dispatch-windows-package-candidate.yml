@@ -1,19 +1,50 @@
-name: Inert Windows shadow registration dispatch-windows-package-candidate
+name: Event-bound Windows frozen package (dark pilot)
 run-name: emo-ci-candidate-${{ inputs.receipt_key }}
 on:
   workflow_dispatch:
     inputs:
       receipt_key:
+        description: Opaque exact broker request SHA-256 (not credentials)
         required: true
         type: string
       request:
         required: true
         type: string
-permissions: {}
+permissions:
+  contents: read
 jobs:
-  registration-only:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 1
+  admit:
+    if: >-
+      github.repository_id == '1468905732' &&
+      vars.EMO_CI_WINDOWS_DARK_PILOT == 'true' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.workflow_sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
+      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      execution_sha: ${{ steps.verify.outputs.execution_sha }}
+      release_tag: ${{ steps.verify.outputs.release_tag }}
     steps:
-      - name: Refuse execution on the registration ref
-        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - name: Verify trusted source event and exact commit
+        id: verify
+        env:
+          WORKER_ROUTE: windows-package
+          WORKER_REQUEST: ${{ inputs.request }}
+          WORKER_RECEIPT: ${{ inputs.receipt_key }}
+        run: python3 controller/scripts/ci_cutover/buildonly_windows_ingress.py
+  windows:
+    needs: admit
+    uses: jsdfhasuh/python_build_scripts/.github/workflows/windows-package-mainline-v2.yml@115fc370e924cd0f32c49f2d3994573267db8685
+    permissions:
+      contents: read
+    with:
+      product_sha: ${{ needs.admit.outputs.execution_sha }}
+      designer_only: true
+      recipient: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}

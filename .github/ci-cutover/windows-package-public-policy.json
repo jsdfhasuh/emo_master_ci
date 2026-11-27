@@ -1,0 +1,18 @@
+{
+  "route": "windows-package",
+  "enabled": false,
+  "origin_path": ".github/workflows/validate-windows-package.yml",
+  "origin_workflow_id": 374506372,
+  "approved_emitter_blob": "b1ba7b01bc4ba57ec9d90d36a71ad603840a7516",
+  "trusted_manual_branches": [
+    "dot/designer-frozen-origin-20261127"
+  ],
+  "trusted_pr_heads": [],
+  "trusted_pr_bases": [],
+  "helper_blobs": {
+    ".github/workflows/emit-ci-cutover-request.yml": "e8ca828481afc4f41d0d39a014ab697f86f8f382",
+    "scripts/ci_cutover/request_emitter.py": "287bae93af96c277c76b995479a9a8d1a1518d32"
+  },
+  "expected_native_head": "b69de44d779028bd740aa4e1ae11dd66e1436219",
+  "expected_execution_sha": "7fccb4988ad0e4abd390110dbb29c80151f5bb3b"
+}
