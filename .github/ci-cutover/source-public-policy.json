@@ -1,4 +1,10 @@
 {
-  "enabled": false,
-  "scope": "Source while product is public; no switch armed"
+  "enabled": true,
+  "origin_workflow_id": 432194935,
+  "origin_path": ".github/workflows/cutover-contract-validation.yml",
+  "approved_emitter_blob": "0edec6ac6dfb6706b58ae7c8944a8eb0db12a039",
+  "trusted_push_branches": ["dot/mainline-ci-migration-20261124"],
+  "trusted_manual_branches": [],
+  "trusted_pr_heads": [],
+  "trusted_pr_bases": []
 }

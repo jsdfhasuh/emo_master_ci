@@ -16,9 +16,8 @@ jobs:
   ingress:
     if: >-
       github.repository_id == '1468905732' &&
-      startsWith(github.ref, 'refs/tags/ci-worker-') &&
-      github.sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
-      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.ref == 'refs/tags/ci-worker-source-owner-rehearsal-20261127' &&
+      github.actor_id == '49879362' && github.triggering_actor == 'jsdfhasuh' &&
       github.run_attempt == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -40,7 +39,9 @@ jobs:
         shell: bash
         env:
           WORKER_REQUEST: ${{ inputs.request }}
-        run: python3 -I controller/scripts/ci_cutover/worker_ingress.py
+        run: |
+          python3 -I -c 'import hashlib, os; raw=os.environ["WORKER_REQUEST"].encode("ascii"); assert len(raw)<=4096 and hashlib.sha256(raw).hexdigest()=="bc5bbb5bd2bd581acbc5716929efd698657ff77d99a049ab69be28cb17131bcd"'
+          python3 -I controller/scripts/ci_cutover/worker_ingress.py
   source:
     needs: ingress
     permissions:
