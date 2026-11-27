@@ -1,0 +1,89 @@
+name: Credit group 0 cold-start diagnostic only
+on:
+  push:
+    branches: [dot/credit-cold-arm0-20261127]
+    paths: [.github/workflows/credit-cold-arm0.yml]
+permissions:
+  contents: read
+jobs:
+  cold:
+    if: github.repository_id == '1468905732' && github.repository == 'jsdfhasuh/emo_master_ci' && github.ref == 'refs/heads/dot/credit-cold-arm0-20261127' && github.actor_id == '49879362' && github.run_attempt == '1'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: product
+    env:
+      SOURCE_SHA: '3845a3aa857a59b25f484b747e5219653da835a6'
+      QT_QPA_PLATFORM: windows
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: controller
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          path: product
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10"
+      - id: bootstrap
+        name: Install digest-pinned Windows age and validate V2 recipient
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, re, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("credit_v2=recipient_mismatch")
+          try:
+              with urlopen("https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip", timeout=50) as response:
+                  data = response.read(12 * 1024 * 1024 + 1)
+              if hashlib.sha256(data).hexdigest() != "46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+                  raise ValueError
+              with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+                  (Path(os.environ["RUNNER_TEMP"]) / "credit-age.exe").write_bytes(bundle.read("age/age.exe"))
+          except Exception:
+              raise SystemExit("credit_v2=tool_install_failed") from None
+      - id: workload
+        name: Run original group 0 only with diagnostics
+        shell: python
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          temp=Path(os.environ["RUNNER_TEMP"])
+          with (temp/"cold-pip.log").open("xb") as log:
+              dep=subprocess.run([sys.executable,"-m","pip","install","-r","requirements-dev.txt"],
+                                 stdout=log,stderr=subprocess.STDOUT,check=False,timeout=480).returncode
+          if dep: raise SystemExit("credit_cold_dependencies=failed")
+          with (temp/"cold-launcher.log").open("xb") as log:
+              rc=subprocess.run([sys.executable,"-I","../controller/scripts/credit_cold_arm.py"],
+                                 stdout=log,stderr=subprocess.STDOUT,check=False,timeout=180).returncode
+          print("credit_cold_arm0="+("completed" if rc==0 else "failed"))
+          sys.exit(rc!=0)
+      - id: seal
+        name: Encrypt only bounded cold readiness and watchdog evidence
+        if: ${{ always() && !cancelled() && steps.bootstrap.outcome == 'success' && steps.workload.outcome != 'skipped' }}
+        shell: pwsh
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          WORKLOAD_OUTCOME: ${{ steps.workload.outcome }}
+        run: python -I ../controller/scripts/credit_cold_seal.py
+      - name: Upload ciphertext only (not Credit acceptance)
+        if: ${{ always() && !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: credit-cold-arm0-diagnostic-only-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cold-credit-arm0.tar.age
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
