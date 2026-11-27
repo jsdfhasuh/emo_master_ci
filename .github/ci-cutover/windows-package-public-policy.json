@@ -1,6 +1,6 @@
 {
   "route": "windows-package",
-  "enabled": false,
+  "enabled": true,
   "origin_path": ".github/workflows/validate-windows-package.yml",
   "origin_workflow_id": 374506372,
   "approved_emitter_blob": "b1ba7b01bc4ba57ec9d90d36a71ad603840a7516",

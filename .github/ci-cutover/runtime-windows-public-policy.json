@@ -1,6 +1,6 @@
 {
   "route": "runtime-windows",
-  "enabled": false,
+  "enabled": true,
   "origin_path": ".github/workflows/runtime-windows.yml",
   "origin_workflow_id": 390286027,
   "approved_emitter_blob": "c4acd471d6d8cadb8a3ea4d5a08f3d9423a02de5",
