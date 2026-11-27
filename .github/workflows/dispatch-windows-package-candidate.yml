@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Reject unreviewed caller before checkout
         if: >-
-          ${{ !(github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/tags/ci-worker-buildonly-review-20261127' && github.workflow_ref == 'jsdfhasuh/emo_master_ci/.github/workflows/dispatch-windows-package-candidate.yml@refs/tags/ci-worker-buildonly-review-20261127' && github.actor_id == '49879362' && github.run_attempt == '1') }}
+          ${{ !(github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/tags/ci-worker-designer-validation-recovery-20261127' && github.workflow_ref == 'jsdfhasuh/emo_master_ci/.github/workflows/dispatch-windows-package-candidate.yml@refs/tags/ci-worker-designer-validation-recovery-20261127' && github.actor_id == '49879362' && github.run_attempt == '1') }}
         run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -35,10 +35,10 @@ jobs:
           WORKER_ROUTE: windows-package
           WORKER_REQUEST: ${{ inputs.request }}
           WORKER_RECEIPT: ${{ inputs.receipt_key }}
-        run: python3 controller/scripts/ci_cutover/buildonly_windows_ingress.py
+        run: python3 controller/scripts/ci_cutover/buildonly_designer_ingress.py
   windows:
     needs: admit
-    uses: jsdfhasuh/python_build_scripts/.github/workflows/windows-package-mainline-v2.yml@094c47f47c1f6ef0504797e3d8dea5fb0ef547aa
+    uses: jsdfhasuh/python_build_scripts/.github/workflows/windows-package-mainline-v2.yml@4e3dce986f945002b1bca28a0f552d7574c387af
     permissions:
       contents: read
     with:
