@@ -1,0 +1,120 @@
+name: Candidate event-bound Source worker (disabled)
+run-name: Source handover candidate
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: Bounded broker identity record, not credentials
+        required: true
+        type: string
+permissions: {}
+jobs:
+  ingress:
+    if: >-
+      github.repository_id == '1468905732' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
+      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      execution_sha: ${{ steps.bind.outputs.execution_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci_cutover
+            .github/ci-cutover
+      - name: Verify broker request and exact product event
+        id: bind
+        shell: bash
+        env:
+          WORKER_REQUEST: ${{ inputs.request }}
+        run: python3 -I controller/scripts/ci_cutover/worker_ingress.py
+  source:
+    needs: ingress
+    permissions:
+      contents: read
+    name: "${{ matrix.platform }} source (${{ matrix.shard }}) / Python 3.10"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [runtime, other]
+        platform: [linux, windows]
+        include:
+          - {platform: linux, os: ubuntu-latest, job_timeout: 65}
+          - {platform: windows, os: windows-latest, job_timeout: 95}
+    env:
+      EXPECTED_SOURCE_SHA: ${{ needs.ingress.outputs.execution_sha }}
+      SOURCE_PLATFORM: ${{ matrix.platform }}
+      SOURCE_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ needs.ingress.outputs.execution_sha }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Verify V2 configuration and install fixed age
+        id: prepare
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          source = subprocess.check_output(["git","-C","product","rev-parse","HEAD"], text=True).strip()
+          if source != os.environ["EXPECTED_SOURCE_SHA"]:
+              raise SystemExit("source_shadow=checkout_mismatch")
+          subprocess.run([sys.executable, "controller/scripts/seal_product_source_v2.py", "--preflight"], check=True)
+          subprocess.run([sys.executable, "controller/scripts/install_web_age.py", str(scratch / "source-age")], check=True)
+      - name: Run exact original Source shard and retain bounded evidence
+        id: workload
+        shell: python
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          sys.exit(subprocess.run([sys.executable, "controller/scripts/run_product_source_v2.py", "product",
+                   str(scratch / "source-raw"), os.environ["SOURCE_PLATFORM"], os.environ["SOURCE_SHARD"]]).returncode)
+      - name: Seal V2 ciphertext only
+        id: seal
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' && steps.workload.outcome != 'skipped' }}
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          SOURCE_OUTCOME: ${{ steps.workload.outcome }}
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          scratch = Path(os.environ["RUNNER_TEMP"]).resolve()
+          binary = scratch / "source-age" / ("age.exe" if os.name == "nt" else "age")
+          sys.exit(subprocess.run([sys.executable, "controller/scripts/seal_product_source_v2.py", "product",
+                   str(scratch / "source-raw"), str(scratch / "source-evidence.tar.age"), str(binary)]).returncode)
+      - name: Retain source ciphertext only
+        if: ${{ !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: source-v2-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+

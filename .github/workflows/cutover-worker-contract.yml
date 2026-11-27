@@ -1,0 +1,22 @@
+name: Validate candidate Source worker without deployment
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths:
+      - .github/workflows/cutover-worker-contract.yml
+      - .github/workflows/dispatch-source-candidate.yml
+      - scripts/ci_cutover/**
+permissions:
+  contents: read
+jobs:
+  validate:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/mainline-ci-migration-20261124'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exercise public Source worker trust contract without credentials
+        run: python3 -m unittest discover -s scripts/ci_cutover -p 'test_*.py' -v
