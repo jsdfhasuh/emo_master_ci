@@ -1,7 +1,12 @@
 name: Public Web V2 shadow
+run-name: emo-ci-candidate-${{ inputs.receipt_key }}
 on:
   workflow_dispatch:
     inputs:
+      receipt_key:
+        description: Opaque exact broker request SHA-256 (not credentials)
+        required: true
+        type: string
       request:
         description: Bounded broker identity record, not credentials
         required: true

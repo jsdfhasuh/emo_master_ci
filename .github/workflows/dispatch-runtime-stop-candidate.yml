@@ -1,7 +1,12 @@
 name: Windows STOP diagnostics V2 (not acceptance) (event-bound)
+run-name: emo-ci-candidate-${{ inputs.receipt_key }}
 on:
   workflow_dispatch:
     inputs:
+      receipt_key:
+        description: Opaque exact broker request SHA-256 (not credentials)
+        required: true
+        type: string
       request:
         required: true
         type: string
