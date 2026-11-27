@@ -1,0 +1,204 @@
+name: Windows display session contract V2 proof
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: Bounded broker identity record, not credentials
+        required: true
+        type: string
+
+permissions:
+  contents: read
+jobs:
+  admit:
+    if: >-
+      github.repository_id == '1468905732' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
+      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      execution_sha: ${{ steps.verify.outputs.execution_sha }}
+      source_event: ${{ steps.verify.outputs.source_event }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Verify origin and exact live product SHA
+        id: verify
+        env:
+          WORKER_ROUTE: display
+          WORKER_CONTROLLER_SHA: ${{ github.workflow_sha }}
+          WORKER_REQUEST: ${{ inputs.request }}
+        run: python3 scripts/verify_web_display_ingress.py
+  native:
+    needs: admit
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ needs.admit.outputs.execution_sha }}
+      QT_QPA_PLATFORM: windows
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      EMO_DISPLAY_EVIDENCE: display-evidence
+      HUARAY_CAMERA_SMOKE: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10"
+      - name: Install digest-pinned Windows age and validate V2 recipient
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, re, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("display_v2=recipient_mismatch")
+          try:
+              with urlopen("https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip", timeout=50) as response:
+                  data = response.read(12 * 1024 * 1024 + 1)
+              if hashlib.sha256(data).hexdigest() != "46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+                  raise ValueError
+              with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+                  (Path(os.environ["RUNNER_TEMP"]) / "display-age.exe").write_bytes(bundle.read("age/age.exe"))
+          except Exception:
+              raise SystemExit("display_v2=tool_install_failed") from None
+      - name: Run exact original native display contract
+        id: workload
+        shell: python
+        run: |
+          import json, os, shlex, subprocess, sys, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          status, stage = "failure", "identity"
+          deadline = time.monotonic() + 15 * 60
+          def run(args, name):
+              with (root / name).open("xb") as log:
+                  child = subprocess.Popen([sys.executable, *args], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+                  try:
+                      return child.wait(timeout=max(0.01, deadline - time.monotonic()))
+                  except subprocess.TimeoutExpired:
+                      with open(os.devnull, "wb") as quiet:
+                          subprocess.run([os.path.join(os.environ["SystemRoot"], "System32", "taskkill.exe"), "/PID", str(child.pid), "/T", "/F"],
+                                         stdin=subprocess.DEVNULL, stdout=quiet, stderr=quiet, timeout=15, check=False)
+                      if child.poll() is None:
+                          child.kill()
+                      child.wait(timeout=10)
+                      return 124
+          try:
+              head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
+              if head != os.environ["SOURCE_SHA"]:
+                  raise ValueError
+              stage = "dependencies"
+              rc = run(["-m", "pip", "install", "-r", "requirements-dev.txt"], "display-dependencies.log")
+              if rc == 0:
+                  stage = "native_contract"
+                  out = Path("display-evidence")
+                  out.mkdir(exist_ok=False)
+                  (out / "source-sha.txt").write_text(head + "\n", encoding="ascii")
+                  command = "python -m pytest -v tests/runtime/presentation/test_display_subscriptions.py tests/runtime/presentation/test_live_decisions.py tests/runtime/test_stop_all_dispatch.py tests/ui/operator_view/test_five_display_sessions.py tests/ui/presentation/test_latest_sampling_contract.py tests/runtime/presentation/test_failed_capture_retirement.py tests/runtime/presentation/test_capture_lane_lifetime.py tests/runtime/presentation/test_export_diagnostics.py --junitxml=display-evidence/junit.xml -o faulthandler_timeout=90"
+                  rc = run(shlex.split(command)[1:], "display-observed.log")
+              status = "success" if rc == 0 else "expired" if rc == 124 else "failure"
+          except Exception:
+              pass
+          (root / "display-status.json").write_text(json.dumps({"status": status, "stage": stage}), encoding="ascii")
+          print("display_v2=" + status)
+          sys.exit(status != "success")
+      - name: Seal bounded V2 evidence without a plaintext archive
+        id: seal
+        if: ${{ !cancelled() && steps.workload.outcome != 'skipped' }}
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          ORIGINAL_OUTCOME: ${{ steps.workload.outcome }}
+        run: |
+          import hashlib, io, json, os, re, stat, subprocess, tarfile
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          evidence = Path("display-evidence")
+          mib = 1024 * 1024
+          caps = {"source-sha.txt": 128, "junit.xml": 4*mib,
+                  "five-sessions.json": mib, "changing-96.json": 4*mib,
+                  "full-lifecycle/five-native-sessions.json": mib,
+                  "close-while-running/five-native-sessions.json": mib,
+                  **{f"full-lifecycle/tab-{i}.png": 4*mib for i in range(5)}}
+          allowed = {n: (evidence / n, cap, False) for n, cap in caps.items()}
+          allowed.update({"stage-report.json": (root / "display-status.json", 2048, False),
+                          "display-dependencies.log": (root / "display-dependencies.log", 512*1024, True),
+                          "display-observed.log": (root / "display-observed.log", 2*mib, True)})
+          output = root / "display-evidence.tar.age"
+          def bounded(path, cap, tail):
+              try:
+                  original = path.lstat()
+              except FileNotFoundError:
+                  return None
+              if not stat.S_ISREG(original.st_mode) or original.st_nlink != 1 or getattr(original, "st_file_attributes", 0) & 0x400:
+                  raise ValueError
+              for parent in path.parents:
+                  attr = parent.lstat()
+                  if not stat.S_ISDIR(attr.st_mode) or getattr(attr, "st_file_attributes", 0) & 0x400:
+                      raise ValueError
+              with path.open("rb") as handle:
+                  current = os.fstat(handle.fileno())
+                  if not os.path.samestat(original, current) or current.st_size > cap and not tail:
+                      raise ValueError
+                  marker = b"[leading bytes omitted]\n"
+                  if current.st_size > cap:
+                      handle.seek(current.st_size - cap + len(marker))
+                      return marker + handle.read(cap - len(marker))
+                  data = handle.read(cap+1)
+                  if len(data) != current.st_size:
+                      raise ValueError
+                  return data
+          try:
+              recipient = os.environ["RECIPIENT"]
+              assert re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient)
+              assert hashlib.sha256(recipient.encode("ascii")).hexdigest() == "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87"
+              meta = dict(version=1, encryption_profile="V2", suite_family="diagnostics",
+                          source_sha=os.environ["SOURCE_SHA"], workflow_sha=os.environ["GITHUB_WORKFLOW_SHA"],
+                          run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                          repository_id=os.environ["GITHUB_REPOSITORY_ID"], job="display-session-contract",
+                          outcome=os.environ["ORIGINAL_OUTCOME"], packager_sha="", files={})
+              payloads = {n: data for n, (p, cap, tail) in allowed.items() if (data := bounded(p, cap, tail)) is not None}
+              assert "stage-report.json" in payloads
+              if meta["outcome"] == "success":
+                  assert all(n in payloads and payloads[n] for n in caps)
+              assert sum(map(len, payloads.values())) <= 36*mib
+              with subprocess.Popen([str(root / "display-age.exe"), "-r", recipient, "-o", str(output)],
+                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as child:
+                  with child.stdin as pipe, tarfile.open(fileobj=pipe, mode="w|") as archive:
+                      for name, content in sorted(payloads.items()):
+                          meta["files"][name] = dict(size=len(content), sha256=hashlib.sha256(content).hexdigest())
+                      payloads["manifest.json"] = json.dumps(meta, sort_keys=True).encode("ascii")
+                      for name, content in sorted(payloads.items()):
+                          member = tarfile.TarInfo(name)
+                          member.size, member.mode = len(content), 0o600
+                          archive.addfile(member, io.BytesIO(content))
+                  if child.wait(timeout=45) != 0:
+                      raise ValueError
+              with output.open("rb") as encrypted:
+                  if encrypted.readline(64) != b"age-encryption.org/v1\n":
+                      raise ValueError
+          except Exception:
+              output.unlink(missing_ok=True)
+              raise SystemExit("display_v2=seal_failed") from None
+      - name: Retain ciphertext only
+        if: ${{ !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: display-session-v2-${{ env.SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/display-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
