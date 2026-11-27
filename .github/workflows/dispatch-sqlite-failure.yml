@@ -1,0 +1,47 @@
+name: Route sqlite-failure diagnostic evidence reuse (not a rerun)
+run-name: emo-ci-candidate-${{ inputs.receipt_key }}
+on:
+  workflow_dispatch:
+    inputs:
+      receipt_key:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+permissions: {}
+jobs:
+  reuse:
+    if: >-
+      github.repository_id == '1468905732' &&
+      github.ref == 'refs/tags/ci-worker-runtime-diagnostic-owner-rehearsal-20261127' &&
+      github.actor_id == '49879362' && github.run_attempt == '1'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci_cutover
+            .github/ci-cutover
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10"
+      - name: Verify exact Windows dispatch and earlier workload evidence; no original rerun
+        shell: pwsh
+        env:
+          WORKER_ROUTE: sqlite-failure
+          WORKER_REQUEST: ${{ inputs.request }}
+          WORKER_RECEIPT: ${{ inputs.receipt_key }}
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: python -I scripts/ci_cutover/diagnostic_reuse.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: diagnostic-reuse-sqlite-failure-${{ github.run_id }}-1
+          path: ${{ runner.temp }}/sqlite-failure-reuse-witness.age
+          if-no-files-found: error
+          retention-days: 7

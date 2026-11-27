@@ -1,0 +1,247 @@
+{
+  "route": "capture",
+  "source": {
+    "run": 45933299471,
+    "attempt": 1,
+    "workflow_id": 371956196,
+    "path": ".github/workflows/runtime-capture-diagnostics.yml",
+    "artifact_id": 15169073010,
+    "artifact_digest": "sha256:2b1bcf527f08c898b0cb934838d7b550be3d3c1e6915b7a692b8eb9af89831ee",
+    "event": "workflow_dispatch",
+    "branch": "dot/runtime-native-origin-20261127"
+  },
+  "request": {
+    "schema": 1,
+    "source_run": 45933299471,
+    "source_attempt": 1,
+    "artifact_id": 15169073010,
+    "artifact_digest": "sha256:2b1bcf527f08c898b0cb934838d7b550be3d3c1e6915b7a692b8eb9af89831ee",
+    "head": "ed7d647ee40831cbae251a37323c3f5dba71c7e7",
+    "base": null,
+    "execution": "ed7d647ee40831cbae251a37323c3f5dba71c7e7",
+    "pr": null,
+    "route": "capture"
+  },
+  "historical": {
+    "repository_id": 1468905732,
+    "workflow_sha": "a2e5becab6a7417edf53ed490afb8097d7de683d",
+    "run": 45812110525,
+    "attempt": 1,
+    "artifact_name": "evidence-diagnostics-runtime-capture-diagnostics-45812110525-1",
+    "member": "capture-evidence.tar.age",
+    "source_sha": "7fccb4988ad0e4abd390110dbb29c80151f5bb3b",
+    "path": ".github/workflows/capture-v2-shadow.yml",
+    "artifact_id": 15119330468,
+    "artifact_size": 22759194,
+    "artifact_digest": "sha256:372a2367ccbee3df783d419e5c885ddd58e333b26868bff18097e91314bbb13f",
+    "job_id": 139882319949
+  },
+  "origin_blob": "7883d119fb338ae2464a02a021d688ddbe68400f",
+  "origin_artifact_size": 317,
+  "historical_workflow_id": 429231752,
+  "historical_job_name": "Instrumented original order / Windows / Python 3.10",
+  "diff": {
+    "total_commits": 18,
+    "files": [
+      [
+        ".github/workflows/cutover-contract-validation.yml",
+        "added",
+        "0edec6ac6dfb6706b58ae7c8944a8eb0db12a039"
+      ],
+      [
+        ".github/workflows/emit-ci-cutover-request.yml",
+        "added",
+        "e8ca828481afc4f41d0d39a014ab697f86f8f382"
+      ],
+      [
+        ".github/workflows/runtime-a18-diagnostics.yml",
+        "modified",
+        "7883d119fb338ae2464a02a021d688ddbe68400f"
+      ],
+      [
+        ".github/workflows/runtime-capture-diagnostics.yml",
+        "modified",
+        "7883d119fb338ae2464a02a021d688ddbe68400f"
+      ],
+      [
+        ".github/workflows/runtime-sqlite-append-controls.yml",
+        "modified",
+        "7883d119fb338ae2464a02a021d688ddbe68400f"
+      ],
+      [
+        ".github/workflows/runtime-sqlite-failure-diagnostics.yml",
+        "modified",
+        "7883d119fb338ae2464a02a021d688ddbe68400f"
+      ],
+      [
+        ".github/workflows/runtime-stop-diagnostics.yml",
+        "modified",
+        "7883d119fb338ae2464a02a021d688ddbe68400f"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/activation-checklist.md",
+        "added",
+        "d161b3750dc679f24631ca49be127b84452464bb"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/design.md",
+        "added",
+        "2e309d14c39b229cff6ef6219837ecca9726353b"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/integration-readiness.md",
+        "added",
+        "e02a3f062cfe25831f777b16345dd870a70c92ad"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/proposal.md",
+        "added",
+        "a3126f2981895a6be6b15d90fafe6224215228bf"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/release-readiness.md",
+        "added",
+        "79a45a468375ac555fe3749666ec141547d01ac6"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/routing-inventory.json",
+        "added",
+        "1bb67a189c480d149565b7875942fd9c67603fae"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/specs/public-ci-routing/spec.md",
+        "added",
+        "9487e7ee534feb33489e4867786e3597e6d5af3d"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/status-readiness.md",
+        "added",
+        "572201e11755a2632a1871ef50a4e0247429355c"
+      ],
+      [
+        "openspec/changes/complete-public-ci-cutover-20261127/tasks.md",
+        "added",
+        "9bfb032a30d17f26cc5045274533dd518504080b"
+      ],
+      [
+        "openspec/mainline-ci-migration-evidence.md",
+        "modified",
+        "d643fa0d0600fa85daeb0c24072db92982814a0b"
+      ],
+      [
+        "scripts/ci_cutover/broker_tick.py",
+        "added",
+        "d54f8cf67dd5f324af5990362c7e9e57325425ff"
+      ],
+      [
+        "scripts/ci_cutover/build_wrappers.py",
+        "added",
+        "957ebd2509421930115c1dd7bf70e50516629e7e"
+      ],
+      [
+        "scripts/ci_cutover/dispatch_once.py",
+        "added",
+        "35676ca5b8144d484325de8e6056b6021ff703f7"
+      ],
+      [
+        "scripts/ci_cutover/durable_claims.py",
+        "added",
+        "bf965b67cbdf78067fae20676407623dbefcc740"
+      ],
+      [
+        "scripts/ci_cutover/github_broker_transport.py",
+        "added",
+        "d267b5e6243bf4740994a636ef0a9e2249b1580b"
+      ],
+      [
+        "scripts/ci_cutover/github_state_store.py",
+        "added",
+        "5bb73ed90b4afb17fb0430149cdca060475e673e"
+      ],
+      [
+        "scripts/ci_cutover/owner_preflight.py",
+        "added",
+        "78106c14c9384c9d63f02e2e1d796c08e0314cc3"
+      ],
+      [
+        "scripts/ci_cutover/private_release_stage.py",
+        "added",
+        "96b1e694d0d67d8af4e4673153a34cd935f920c9"
+      ],
+      [
+        "scripts/ci_cutover/request_emitter.py",
+        "added",
+        "287bae93af96c277c76b995479a9a8d1a1518d32"
+      ],
+      [
+        "scripts/ci_cutover/terminal_policy.py",
+        "added",
+        "42163bc0779e102e98fe7c2bc8f3c56f10c3d9d3"
+      ],
+      [
+        "scripts/ci_cutover/test_broker_tick.py",
+        "added",
+        "b34ffed3bd4b781760b25b1ec63103356ebb8795"
+      ],
+      [
+        "scripts/ci_cutover/test_dispatch_once.py",
+        "added",
+        "2fc44581d5bee90ee6a604f3397e167817c1cc7f"
+      ],
+      [
+        "scripts/ci_cutover/test_durable_claims.py",
+        "added",
+        "970f0bd66e0f451f77cd871c2a0e7df36917d780"
+      ],
+      [
+        "scripts/ci_cutover/test_github_broker_transport.py",
+        "added",
+        "7e3274010c39856a0444c7d0992c231fd6351d06"
+      ],
+      [
+        "scripts/ci_cutover/test_github_state_store.py",
+        "added",
+        "880826099dbbca65dc99ce349754cda72a41c62b"
+      ],
+      [
+        "scripts/ci_cutover/test_owner_preflight.py",
+        "added",
+        "e61ab15c6c175b844f27dab99fe2cb259cc2da9b"
+      ],
+      [
+        "scripts/ci_cutover/test_request_emitter.py",
+        "added",
+        "5e1255dbb7b7c832d352ffff36a286880d477f0e"
+      ],
+      [
+        "scripts/ci_cutover/test_stage.py",
+        "added",
+        "3c09e40ffa613a01183336a1eb35a50b336f61a7"
+      ],
+      [
+        "scripts/ci_cutover/test_terminal_policy.py",
+        "added",
+        "a8ed47e30a131f687bfc2bbe41f0e105b2068738"
+      ],
+      [
+        "scripts/ci_cutover/test_trusted_route.py",
+        "added",
+        "e4a7b18959a9d8cf2201da68794101165fa5447b"
+      ],
+      [
+        "scripts/ci_cutover/trusted_route.py",
+        "added",
+        "15f1248620de14a3ed8d17046533dfc3c2a9714b"
+      ]
+    ],
+    "workflow_paths": [
+      ".github/workflows/cutover-contract-validation.yml",
+      ".github/workflows/emit-ci-cutover-request.yml",
+      ".github/workflows/runtime-a18-diagnostics.yml",
+      ".github/workflows/runtime-capture-diagnostics.yml",
+      ".github/workflows/runtime-sqlite-append-controls.yml",
+      ".github/workflows/runtime-sqlite-failure-diagnostics.yml",
+      ".github/workflows/runtime-stop-diagnostics.yml"
+    ]
+  }
+}
