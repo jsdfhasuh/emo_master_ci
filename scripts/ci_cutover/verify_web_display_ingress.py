@@ -7,6 +7,8 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 REPO_ID=1343796337
 BASE="https://api.github.com/repos/jsdfhasuh/emo_master"
 MAX=1_048_576
+DIAGNOSTICS={"a18","capture","credit","sqlite-append","sqlite-failure","stop"}
+ROUTES=DIAGNOSTICS|{"web","display"}
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -87,13 +89,27 @@ def check(operator, message, read=fetch, route="source"):
     require(re.fullmatch(r"\.github/workflows/[a-z0-9-]+\.yml",path))
     blob=read(f"/contents/{path}?ref={execution}")
     require(blob.get("sha")==sha(operator["approved_emitter_blob"]) and blob.get("type")=="file")
+    require(route in ROUTES and event_allowed(route,event))
     return execution, event
+
+
+def event_allowed(route,event):
+    if route=="stop":
+        return event=="workflow_dispatch"
+    if route in DIAGNOSTICS|{"display"}:
+        return event in ("push","workflow_dispatch")
+    return route=="web" and event in ("push","pull_request","workflow_dispatch")
+
+
+def policy_path(route, entry=__file__):
+    from pathlib import Path
+    require(route in ROUTES)
+    return Path(entry).resolve().parents[2]/".github"/"ci-cutover"/(route+"-public-policy.json")
 
 
 
 def main():
     import os
-    from pathlib import Path
     def unique(pairs):
         out={}
         for key,value in pairs:
@@ -102,9 +118,7 @@ def main():
         return out
     try:
         route=os.environ["WORKER_ROUTE"]
-        require(route in {"web","display"})
-        policy=json.loads((Path(__file__).resolve().parents[1] /
-              f".github/ci-cutover/{route}-public-policy.json").read_text(),object_pairs_hook=unique)
+        policy=json.loads(policy_path(route).read_text(),object_pairs_hook=unique)
         require(policy["enabled"] is True and policy["actor_id"]==ident(policy["actor_id"]))
         require(os.environ["GITHUB_EVENT_NAME"]=="workflow_dispatch" and
                 os.environ["GITHUB_REF"].startswith("refs/tags/ci-worker-") and
@@ -115,7 +129,6 @@ def main():
         require(0<len(raw)<=4096)
         message=json.loads(raw,object_pairs_hook=unique)
         execution,event=check(policy,message,route=route)
-        require(route!="display" or event!="pull_request")
         with open(os.environ["GITHUB_OUTPUT"],"a",encoding="ascii") as out:
             out.write(f"execution_sha={execution}\nsource_event={event}\n")
     except Exception:

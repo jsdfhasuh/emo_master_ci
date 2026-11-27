@@ -1,0 +1,334 @@
+name: Windows normal capture diagnostics (not acceptance) (event-bound)
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        required: true
+        type: string
+permissions:
+  contents: read
+
+
+jobs:
+  admit:
+    if: >-
+      github.repository_id == '1468905732' &&
+      startsWith(github.ref, 'refs/tags/ci-worker-') &&
+      github.workflow_sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
+      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      execution_sha: ${{ steps.verify.outputs.execution_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Verify diagnostic receipt and exact live SHA
+        id: verify
+        env:
+          WORKER_ROUTE: capture
+          WORKER_CONTROLLER_SHA: ${{ github.workflow_sha }}
+          WORKER_REQUEST: ${{ inputs.request }}
+        run: python3 scripts/ci_cutover/verify_web_display_ingress.py
+  observe:
+    needs: admit
+    name: Instrumented original order / Windows / Python 3.10
+    # Standard CI machine class and dependencies; original test order,
+    # deadlines, worker target, SQLite durability and assertions stay intact.
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: product
+    env:
+      SOURCE_SHA: ${{ needs.admit.outputs.execution_sha }}
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/sqlite_phase_journal.py
+            scripts/capture_owner_probe.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jsdfhasuh/emo_master
+          ref: ${{ env.SOURCE_SHA }}
+          path: product
+          persist-credentials: false
+      - name: Verify exact diagnostic source checkout
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $sha -cne $env:SOURCE_SHA) { throw "diagnostic_source_pin_mismatch" }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10.11"
+      - name: Verify V2 recipient and install pinned Windows age
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, re, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("capture_v2=recipient_mismatch")
+          url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"
+          with urlopen(url, timeout=50) as download:
+              data = download.read(12 * 1024 * 1024 + 1)
+          if hashlib.sha256(data).hexdigest() != "46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+              raise SystemExit("capture_v2=tool_digest_mismatch")
+          with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+              with (Path(os.environ["RUNNER_TEMP"]) / "capture-age.exe").open("xb") as binary:
+                  binary.write(bundle.read("age/age.exe"))
+      - name: Install the existing test dependencies
+        shell: python
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          with (Path(os.environ["RUNNER_TEMP"]) / "capture-dependencies.log").open("xb") as log:
+              result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"],
+                                      stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+          if result.returncode:
+              raise SystemExit("capture_v2=dependency_install_failed")
+      - name: Record the hosted runner resource boundary
+        shell: python
+        run: |
+          import ctypes, json, os
+          from ctypes import wintypes
+          class Memory(ctypes.Structure):
+              _fields_ = [("length", wintypes.DWORD), ("load", wintypes.DWORD)] + [
+                  (name, ctypes.c_ulonglong) for name in (
+                      "total_physical", "available_physical", "total_commit",
+                      "available_commit", "total_virtual", "available_virtual", "extended_virtual")]
+          kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+          kernel.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(Memory)]
+          kernel.GlobalMemoryStatusEx.restype = wintypes.BOOL
+          memory = Memory()
+          memory.length = ctypes.sizeof(memory)
+          if not kernel.GlobalMemoryStatusEx(ctypes.byref(memory)):
+              raise ctypes.WinError(ctypes.get_last_error())
+          print(json.dumps({"role": "diagnostic_only", "runner": "windows-latest standard",
+              "job_timeout_minutes": 120, "cpu_count": os.cpu_count(),
+              **{name: getattr(memory, name) for name in (
+                  "total_physical", "available_physical", "total_commit", "available_commit")}}))
+      - name: Seal preflight checkpoint using V2
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          from subprocess import DEVNULL
+          root = Path(os.environ["RUNNER_TEMP"])
+          recipient = os.environ["RECIPIENT"]
+          if hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("capture_v2=recipient_mismatch")
+          revision = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=DEVNULL, text=True).strip()
+          controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller"
+          if revision != os.environ["SOURCE_SHA"]:
+              raise SystemExit("capture_v2=pin_mismatch")
+          record = {"role": "diagnostic_only", "source_sha": revision,
+                    "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"], "run": os.environ["GITHUB_RUN_ID"],
+                    "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "observed_tests": "not_run"}
+          subprocess.run([str(root / "capture-age.exe"), "-r", recipient,
+                          "-o", str(root / "capture-preflight.age")], input=json.dumps(record).encode("ascii"),
+                         stdout=DEVNULL, stderr=DEVNULL, check=True, timeout=90)
+      - name: Upload V2 preflight ciphertext only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-v2-capture-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/capture-preflight.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Run original pytest suite with private bounded observations
+        id: observed_tests
+        timeout-minutes: 96
+        shell: python
+        run: |
+          import os, subprocess, sys, threading, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          controller = Path(os.environ["GITHUB_WORKSPACE"]) / "controller" / "scripts"
+          env = dict(os.environ)
+          env["EMO_SQLITE_PHASE_JOURNAL"] = str(root / "pytest-phases.jsonl")
+          env["EMO_SQLITE_IMMEDIATE_FAILURES"] = "1"
+          env["EMO_PRIVATE_CAPTURE_OWNER_TRACE"] = str(root / "capture-owner-state.json")
+          env["GITHUB_WORKSPACE"] = str(Path.cwd())
+          env["PYTHONPATH"] = str(controller) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+          command = [sys.executable, "-m", "pytest", "-q",
+                     "-p", "scripts.r3_sqlite_capture_diagnostics", "--sqlite-capture-diagnostics",
+                     str(root / "runtime-capture-diagnostics.json"),
+                     "-o", "faulthandler_timeout=90", "-p", "sqlite_phase_journal", "-p", "capture_owner_probe", "--junitxml", str(root / "observed-junit.xml")]
+          worker = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          drain_failed = threading.Event()
+          limit = 4 * 1024 * 1024
+          def drain():
+              tail = bytearray()
+              out = root / "observed-output.log"
+              partial = root / "observed-output.staging"
+              last_sync = time.monotonic()
+              def persist():
+                  partial.write_bytes(tail)
+                  partial.replace(out)
+              try:
+                  while chunk := worker.stdout.read1(65536):
+                      tail.extend(chunk)
+                      if len(tail) > limit:
+                          del tail[:-limit]
+                      if time.monotonic() - last_sync >= 30:
+                          persist()
+                          last_sync = time.monotonic()
+              except Exception:
+                  drain_failed.set()
+              finally:
+                  try:
+                      persist()
+                  except Exception:
+                      drain_failed.set()
+
+          def terminate():
+              try:
+                  subprocess.run(["taskkill", "/PID", str(worker.pid), "/T", "/F"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+              finally:
+                  if worker.poll() is None:
+                      worker.kill()
+                  worker.wait(timeout=15)
+
+          reader = threading.Thread(target=drain, daemon=True)
+          reader.start()
+          deadline = time.monotonic() + 90 * 60
+          while True:
+              if drain_failed.is_set():
+                  terminate()
+                  status = 1
+                  break
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  terminate()
+                  (root / "capture-timed-out").touch()
+                  status = 124
+                  break
+              try:
+                  status = worker.wait(timeout=min(remaining, 1))
+                  break
+              except subprocess.TimeoutExpired:
+                  pass
+          reader.join(timeout=15)
+          if reader.is_alive() or drain_failed.is_set():
+              (root / "capture-output-drain-failed").touch()
+              print("capture_v2=output_drain_failed")
+              sys.exit(1)
+          print("capture_v2=workload_finished")
+          sys.exit(status)
+      - name: Validate bounded synthetic evidence without printing it
+        id: validate
+        if: ${{ !cancelled() }}
+        shell: python
+        env:
+          ORIGINAL_TEST_STEP: ${{ steps.observed_tests.outcome }}
+        run: |
+          import json, os
+          from pathlib import Path
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "runtime-capture-diagnostics.json"
+          if not evidence.is_file() or not 0 < evidence.stat().st_size <= 1024 * 1024:
+              raise RuntimeError("CAPTURE_DIAGNOSTIC_UNAVAILABLE: missing, empty or oversized; do not infer PASS")
+          content = evidence.read_text(encoding="utf-8")
+          record = json.loads(content)
+          source = record.get("source", {})
+          target = "tests/runtime/presentation/test_normal_capture.py::testOriginalStartCapturesInstalledOperatorsAndProductionCounter"
+          valid = (source.get("test") == target
+              and source.get("diagnostic_valid") is True
+              and source.get("source_stable") is True
+              and source.get("runtime_bound") is True
+              and source.get("fixture_teardown_outcome") in ("passed", "failed")
+              and record.get("observer_retired") is True
+              and record.get("worker_instrumented") is False
+              and record.get("errors") == []
+              and source.get("pytest_outcome") in ("passed", "failed"))
+          if os.environ.get("ORIGINAL_TEST_STEP") == "success":
+              valid = (valid and source.get("pytest_outcome") == "passed"
+                  and source.get("fixture_teardown_outcome") == "passed")
+          if not valid:
+              raise RuntimeError("CAPTURE_DIAGNOSTIC_INVALID: missing, changed or unfinished observations")
+      - name: Seal bounded Capture evidence using only V2
+        id: seal
+        if: ${{ !cancelled() && steps.observed_tests.outcome != 'skipped' }}
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+          OBSERVED: ${{ steps.observed_tests.outcome }}
+          VALIDATED: ${{ steps.validate.outcome }}
+        run: |
+          import hashlib, io, json, os, re, stat, subprocess, tarfile
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("capture_v2=recipient_mismatch")
+          name = "runtime-capture-diagnostics.json"
+          caps = {name: 1024 * 1024, "observed-output.log": 4 * 1024 * 1024,
+                  "pytest-phases.jsonl": 64 * 1024 * 1024, "observed-junit.xml": 12 * 1024 * 1024,
+                  "capture-owner-state.json": 128 * 1024}
+          files = {}
+          for item, cap in caps.items():
+              source = root / item
+              try:
+                  initial = source.lstat()
+                  if stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1 and not getattr(initial, "st_file_attributes", 0) & 0x400:
+                      with source.open("rb") as stream:
+                          current = os.fstat(stream.fileno())
+                          if os.path.samestat(initial, current) and 0 < current.st_size <= cap:
+                              data = stream.read(cap + 1)
+                              if len(data) == current.st_size:
+                                  files[item] = data
+              except FileNotFoundError:
+                  pass
+          files["stage-report.json"] = json.dumps({
+              "observed_tests": os.environ["OBSERVED"],
+              "evidence_validation": os.environ["VALIDATED"],
+              "capture_payload": "present" if name in files else "unavailable",
+              "output_drain": "failed" if (root / "capture-output-drain-failed").is_file() else "not_reported_failed",
+              "observed_tests_budget": "expired" if (root / "capture-timed-out").is_file() else "not_reported_expired",
+          }, sort_keys=True).encode("ascii")
+          meta = {
+              "version": 1, "encryption_profile": "V2", "suite_family": "diagnostics",
+              "source_sha": os.environ["SOURCE_SHA"],
+              "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
+              "job": "runtime-capture-diagnostics", "outcome": os.environ["OBSERVED"],
+              "packager_sha": "",
+              "files": {key: {"size": len(value), "sha256": hashlib.sha256(value).hexdigest()} for key, value in files.items()}
+          }
+          files["manifest.json"] = json.dumps(meta, sort_keys=True).encode("ascii")
+          output = root / "capture-evidence.tar.age"
+          with subprocess.Popen([str(root / "capture-age.exe"), "-r", recipient, "-o", str(output)],
+                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as cipher:
+              with cipher.stdin as sink, tarfile.open(fileobj=sink, mode="w|") as bundle:
+                  for key, value in sorted(files.items()):
+                      member = tarfile.TarInfo(key)
+                      member.size, member.mode = len(value), 0o600
+                      bundle.addfile(member, io.BytesIO(value))
+              if cipher.wait(timeout=90) != 0:
+                  raise SystemExit("capture_v2=seal_failed")
+      - name: Upload Capture ciphertext only
+        if: ${{ !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-diagnostics-runtime-capture-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/capture-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
