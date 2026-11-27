@@ -1,0 +1,32 @@
+name: Verify public ingress against a real product push receipt
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: [.github/workflows/cutover-public-source-ingress-proof.yml]
+permissions:
+  contents: read
+jobs:
+  proof:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/mainline-ci-migration-20261124'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci_cutover
+      - name: Check actual product receipt from the public hosted runner
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/scripts/ci_cutover" python3 - <<'PY'
+          import json
+          from worker_ingress import check
+          p=dict(origin_workflow_id=432194935,origin_path=".github/workflows/cutover-contract-validation.yml",
+                            trusted_push_branches=["dot/mainline-ci-migration-20261124"],trusted_manual_branches=[],
+                            trusted_pr_heads=[],trusted_pr_bases=[],approved_emitter_blob="045904fdb6169e2c94309cc6304ce4e7b57b498c")
+          msg=json.loads('{"schema":1,"source_run":45915291920,"source_attempt":1,"artifact_id":15161339964,"artifact_digest":"sha256:f2865103ad81d1bcab1d6c48c0c764933ca3d7920dca08997b4c5b887c391fb8","head":"6c37b5a6f820b424d91014dd03688a9af53fc4fe","base":null,"execution":"6c37b5a6f820b424d91014dd03688a9af53fc4fe","pr":null,"route":"source"}')
+          if check(p,msg)!="6c37b5a6f820b424d91014dd03688a9af53fc4fe":
+              raise SystemExit("actual receipt identity refused")
+          print("public_source_ingress=real_push_identity_bound_no_dispatch_or_status")
+          PY
