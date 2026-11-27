@@ -1,11 +1,12 @@
 {
-  "enabled": false,
-  "actor_id": null,
-  "origin_workflow_id": null,
-  "origin_path": ".github/workflows/display-session-contract.yml",
-  "approved_emitter_blob": null,
-  "trusted_push_branches": [],
+  "approved_emitter_blob": "0edec6ac6dfb6706b58ae7c8944a8eb0db12a039",
+  "enabled": true,
+  "origin_path": ".github/workflows/cutover-contract-validation.yml",
+  "origin_workflow_id": 432194935,
   "trusted_manual_branches": [],
+  "trusted_pr_bases": [],
   "trusted_pr_heads": [],
-  "trusted_pr_bases": []
+  "trusted_push_branches": [
+    "dot/mainline-ci-migration-20261124"
+  ]
 }

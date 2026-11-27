@@ -1,0 +1,18 @@
+{
+  "request": {
+    "artifact_digest": "sha256:2617140fd4f846e6a3db6aef674e5f05237ec1ff1e83f9af598e4a106203bb50",
+    "artifact_id": 15165008710,
+    "base": null,
+    "execution": "a49691693887df75e71690dcb42cd02c98a6d2ac",
+    "head": "a49691693887df75e71690dcb42cd02c98a6d2ac",
+    "pr": null,
+    "route": "display",
+    "schema": 1,
+    "source_attempt": 1,
+    "source_run": 45924354273
+  },
+  "route": "display",
+  "schema": 1,
+  "scope": "nonrequired-rehearsal",
+  "tag": "ci-worker-web-display-owner-rehearsal-20261127"
+}

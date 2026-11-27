@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
     inputs:
       receipt_key:
-        description: Opaque exact broker request SHA-256 (not credentials)
         required: true
         type: string
       request:
@@ -18,9 +17,9 @@ jobs:
   admit:
     if: >-
       github.repository_id == '1468905732' &&
-      startsWith(github.ref, 'refs/tags/ci-worker-') &&
-      github.sha == vars.EMO_CI_CANDIDATE_WORKER_SHA &&
-      github.actor_id == vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID &&
+      github.ref == 'refs/tags/ci-worker-web-display-owner-rehearsal-20261127' &&
+      github.actor_id == '49879362' &&
+      github.triggering_actor == 'jsdfhasuh' &&
       github.run_attempt == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -38,7 +37,12 @@ jobs:
           WORKER_ROUTE: display
           WORKER_CONTROLLER_SHA: ${{ github.workflow_sha }}
           WORKER_REQUEST: ${{ inputs.request }}
-        run: python3 scripts/verify_web_display_ingress.py
+          WORKER_RECEIPT_KEY: ${{ inputs.receipt_key }}
+          REHEARSAL_ACTOR_ID: '49879362'
+        run: |
+          python3 -I scripts/verify_web_display_rehearsal.py
+          python3 -I scripts/verify_web_display_ingress.py
+          grep -Fx 'source_event=push' "$GITHUB_OUTPUT" >/dev/null
   native:
     needs: admit
     runs-on: windows-latest
