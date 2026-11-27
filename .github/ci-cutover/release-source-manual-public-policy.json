@@ -1,1 +1,1 @@
-{"enabled":false,"route":"release-source-manual","origin_sha":"be1300efcfcab934576c982a494167d97b698524","adapter_blob":"6c0f31b7d96aa0e77d67120cec5b5fb842781c5e"}
+{"enabled":true,"route":"release-source-manual","origin_sha":"be1300efcfcab934576c982a494167d97b698524","adapter_blob":"6c0f31b7d96aa0e77d67120cec5b5fb842781c5e"}
