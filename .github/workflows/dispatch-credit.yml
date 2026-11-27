@@ -13,14 +13,14 @@ permissions:
   contents: read
 jobs:
   control:
-    if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.ref == 'refs/tags/ci-worker-credit-native-proof-20261127' && github.actor_id == '49879362' && github.run_attempt == '1'
+    if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.ref == 'refs/tags/ci-worker-credit-readiness-native-proof-20261127' && github.actor_id == '49879362' && github.run_attempt == '1'
     runs-on: windows-latest
     timeout-minutes: 36
     defaults:
       run:
         working-directory: product
     env:
-      SOURCE_SHA: 'ea9b26b24e436fd270172311f1f8cae90f68ddd3'
+      SOURCE_SHA: '18bb8482f269a9172e5cd38c21366a093d60003c'
       QT_QPA_PLATFORM: windows
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'

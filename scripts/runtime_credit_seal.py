@@ -33,6 +33,15 @@ def main():
     if report.exists():files.append(report)
     evidence=scratch/("export-credit-"+os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_RUN_ATTEMPT"])
     if evidence.exists(): files.extend(add_tree(evidence))
+    expected={evidence/f"trial-{i}-credit-{mode}"/"startup-readiness-detail.json"
+              for i,mode in enumerate(("off","on","on","off"))}
+    found={f for f in files if f.name=="startup-readiness-detail.json"}
+    status=json.loads((base/"status.json").read_text(encoding="ascii"))
+    if not found<=expected or any(not safe_file(f) or not 0<f.stat().st_size<=16384 for f in found):
+        raise ValueError("unexpected readiness evidence")
+    # A red original run may have partial snapshots; don't suppress its ciphertext.
+    if [row.get("rc") for row in status["stages"]]==[0,0,0,0] and status.get("startup_readiness_arms")==4 and found!=expected:
+        raise ValueError("readiness seal mismatch")
     if len(files)>20000 or any(not safe_file(f) for f in files) or sum(f.stat().st_size for f in files)>2*1024**3:raise ValueError
     out=root/"credit-evidence.tar.age"
     with subprocess.Popen([str(root/"credit-age.exe"),"-r",r,"-o",str(out)],stdin=subprocess.PIPE,

@@ -7,7 +7,7 @@ import re
 from urllib.request import Request, urlopen
 
 PRODUCT="jsdfhasuh/emo_master"; PUBLIC="jsdfhasuh/emo_master_ci"
-BRANCH="dot/credit-native-receipt-20261127"; TAG="ci-worker-credit-native-proof-20261127"
+BRANCH="dot/credit-readiness-native-receipt-20261127"; TAG="ci-worker-credit-readiness-native-proof-20261127"
 PATH=".github/workflows/dispatch-credit.yml"
 ORIGIN_PATH=".github/workflows/runtime-credit-diagnostics.yml"
 OWNER=49879362

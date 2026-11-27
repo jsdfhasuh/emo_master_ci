@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -39,11 +40,29 @@ def child_environment(parent, root, product):
                HUARAY_CAMERA_SMOKE="0", PYTHONUNBUFFERED="1", PIP_DISABLE_PIP_VERSION_CHECK="1")
     return env
 
+MODES=("off","on","on","off")
+READINESS="startup-readiness-detail.json"
+
+def readiness_paths(evidence):
+    return [evidence / f"trial-{i}-credit-{mode}" / READINESS for i,mode in enumerate(MODES)]
+
+def count_readiness(evidence):
+    count=0
+    for path in readiness_paths(evidence):
+        try:
+            st=path.lstat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink!=1 or getattr(st,"st_file_attributes",0)&0x400 or not 0<st.st_size<=16384:
+            raise ValueError("unsafe readiness evidence")
+        count+=1
+    return count
+
 def main():
     product = Path(sys.argv[1]).resolve()
     controller = Path(__file__).resolve().parents[1]
     requested = json.loads((controller/".github/diagnostic-activation/credit-original-v2.json").read_text(encoding="utf-8"))
-    if requested != {"product_sha":SOURCE,"profile":"credit-original-v2-file-boundaries"}:
+    if requested != {"product_sha":SOURCE,"profile":"credit-original-v2-file-boundaries-readiness-v1"}:
         raise ValueError("activation_identity")
     public_head = subprocess.check_output(["git","-C",str(controller),"rev-parse","HEAD"],text=True).strip()
     if public_head != os.environ["GITHUB_WORKFLOW_SHA_FIXED"]:
@@ -67,10 +86,12 @@ def main():
             receipt["stages"].append({"state":"skipped"});save();continue
         if i==2:
             env["EMO_CREDIT_RETAIN_BYTES"]=str(collected)
+            env["EMO_CREDIT_STARTUP_DETAIL"]="1"
             env["EMO_CREDIT_HUB_TICK_TRACE"]="1"
             env["EMO_CREDIT_ASSET_FILE_SUBPHASES"]="1"
         if i==3:
             env.pop("EMO_CREDIT_RETAIN_BYTES",None)
+            env.pop("EMO_CREDIT_STARTUP_DETAIL",None)
             env.pop("EMO_CREDIT_HUB_TICK_TRACE",None)
             env.pop("EMO_CREDIT_ASSET_FILE_SUBPHASES",None)
             script=route_report_into_ciphertext(script)
@@ -89,10 +110,11 @@ def main():
     observed=scratch/("export-credit-"+env["GITHUB_RUN_ID"]+"-"+env["GITHUB_RUN_ATTEMPT"])/"trial-3-credit-off"/"hub-tick-observations.json"
     receipt["hub_probe_payload"]="present" if observed.is_file() else "unavailable"
     receipt["asset_file_subphase_arms"]=sum((observed.parent.parent/f"trial-{p}-credit-{mode}"/"asset-file-subphases.json").is_file()
-        for p,mode in enumerate(("off","on","on","off")))
+        for p,mode in enumerate(MODES))
+    receipt["startup_readiness_arms"]=count_readiness(observed.parent.parent)
     save()
     report=json.loads((scratch/"export-credit-sealed.json").read_text(encoding="utf-8"))
-    if (receipt["hub_probe_payload"]!="present" or receipt["asset_file_subphase_arms"]!=4 or any(s.get("rc")!=0 for s in receipt["stages"]) or report.get("expected_sha")!=SOURCE
+    if (receipt["hub_probe_payload"]!="present" or receipt["asset_file_subphase_arms"]!=4 or receipt["startup_readiness_arms"]!=4 or any(s.get("rc")!=0 for s in receipt["stages"]) or report.get("expected_sha")!=SOURCE
         or report.get("measurement_status")!="VALID" or report.get("observation_status")!="COMPLETE"):
         return 1
     return 0
