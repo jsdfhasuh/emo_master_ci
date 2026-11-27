@@ -1,0 +1,19 @@
+{
+  "artifact_size": 341,
+  "origin_blob": "9caa733be74de8910281d806c530dc8597162105",
+  "origin_workflow_id": 371841184,
+  "receipt_sha": "f33fad8944fd494fb842ed31768070bcbc8f5c33",
+  "request": {
+    "artifact_digest": "sha256:ecbf54b6cfedd3e136ab35ed5965152229b27388b47382bcd34e6b80434db8c0",
+    "artifact_id": 15217773210,
+    "base": null,
+    "execution": "ea9b26b24e436fd270172311f1f8cae90f68ddd3",
+    "head": "f33fad8944fd494fb842ed31768070bcbc8f5c33",
+    "pr": null,
+    "route": "credit",
+    "schema": 1,
+    "source_attempt": 1,
+    "source_run": 46038219428
+  },
+  "source_sha": "ea9b26b24e436fd270172311f1f8cae90f68ddd3"
+}

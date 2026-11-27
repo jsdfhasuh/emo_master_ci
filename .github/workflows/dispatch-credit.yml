@@ -1,19 +1,113 @@
-name: Inert diagnostic shadow registration dispatch-credit
+name: Windows Credit diagnostics V2 (not acceptance)
 run-name: emo-ci-candidate-${{ inputs.receipt_key }}
 on:
   workflow_dispatch:
     inputs:
       receipt_key:
-        required: true
         type: string
+        required: true
       request:
-        required: true
         type: string
-permissions: {}
+        required: true
+permissions:
+  contents: read
 jobs:
-  registration-only:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 1
+  control:
+    if: github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.ref == 'refs/tags/ci-worker-credit-native-proof-20261127' && github.actor_id == '49879362' && github.run_attempt == '1'
+    runs-on: windows-latest
+    timeout-minutes: 36
+    defaults:
+      run:
+        working-directory: product
+    env:
+      SOURCE_SHA: 'ea9b26b24e436fd270172311f1f8cae90f68ddd3'
+      QT_QPA_PLATFORM: windows
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
     steps:
-      - name: Refuse execution on the registration ref
-        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - name: Verify exact source receipt before product checkout
+        shell: pwsh
+        working-directory: controller
+        env:
+          WORKER_REQUEST: ${{ inputs.request }}
+          WORKER_RECEIPT: ${{ inputs.receipt_key }}
+        run: python -I scripts/credit_verify_ingress.py
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: product
+          repository: jsdfhasuh/emo_master
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.10"
+      - id: bootstrap
+        name: Install digest-pinned Windows age and validate V2 recipient
+        shell: python
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          import hashlib, io, os, re, zipfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          recipient = os.environ["RECIPIENT"]
+          if not re.fullmatch(r"age1[023456789ac-hj-np-z]{58}", recipient) or hashlib.sha256(recipient.encode("ascii")).hexdigest() != "ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87":
+              raise SystemExit("credit_v2=recipient_mismatch")
+          try:
+              with urlopen("https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip", timeout=50) as response:
+                  data = response.read(12 * 1024 * 1024 + 1)
+              if hashlib.sha256(data).hexdigest() != "46db0db71f146061f7c8fffa912cb806aef1bc8450e27a3abc1744f0591b89fb":
+                  raise ValueError
+              with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+                  (Path(os.environ["RUNNER_TEMP"]) / "credit-age.exe").write_bytes(bundle.read("age/age.exe"))
+          except Exception:
+              raise SystemExit("credit_v2=tool_install_failed") from None
+      - name: Run fixed original four steps in Windows Qt
+        shell: pwsh
+        env:
+          GITHUB_WORKFLOW_SHA_FIXED: ${{ github.workflow_sha }}
+        run: |
+          python -I ../controller/scripts/runtime_credit_recipe.py .
+          exit $LASTEXITCODE
+      - id: seal
+        if: ${{ always() && steps.bootstrap.outcome == 'success' }}
+        name: Seal evidence without displaying product output
+        shell: pwsh
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: |
+          python -I ../controller/scripts/runtime_credit_seal.py
+          exit $LASTEXITCODE
+      - name: Keep only V2 ciphertext
+        if: ${{ always() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: credit-v2-${{ env.SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/credit-evidence.tar.age
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Seal actual 384 PNG files in four separate encrypted streams
+        id: actual
+        shell: pwsh
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+        run: python -I ../controller/scripts/credit_pack_bytes.py
+      - name: Upload four distinct ciphertext bundles (no plaintext)
+        if: ${{ !cancelled() && steps.actual.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: credit-actual-384-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/credit-actual-arm-0.tar.age
+            ${{ runner.temp }}/credit-actual-arm-1.tar.age
+            ${{ runner.temp }}/credit-actual-arm-2.tar.age
+            ${{ runner.temp }}/credit-actual-arm-3.tar.age
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
