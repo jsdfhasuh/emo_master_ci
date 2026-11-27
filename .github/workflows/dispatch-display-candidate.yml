@@ -1,0 +1,24 @@
+name: Candidate event-bound display worker (registration only)
+run-name: emo-ci-candidate-${{ inputs.receipt_key }}
+on:
+  workflow_dispatch:
+    inputs:
+      receipt_key:
+        description: Opaque exact broker request SHA-256 (not credentials)
+        required: true
+        type: string
+      request:
+        description: Bounded broker identity record, not credentials
+        required: true
+        type: string
+permissions: {}
+jobs:
+  registration-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Refuse execution on the registration ref
+        shell: bash
+        run: |
+          echo 'Registration only. A reviewed immutable Worker tag is required.'
+          exit 1
