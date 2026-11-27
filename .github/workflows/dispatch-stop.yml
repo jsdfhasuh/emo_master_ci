@@ -1,0 +1,19 @@
+name: Inert diagnostic shadow registration dispatch-stop
+run-name: emo-ci-candidate-${{ inputs.receipt_key }}
+on:
+  workflow_dispatch:
+    inputs:
+      receipt_key:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+permissions: {}
+jobs:
+  registration-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Refuse execution on the registration ref
+        run: exit 1
