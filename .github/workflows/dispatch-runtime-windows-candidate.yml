@@ -39,7 +39,7 @@ jobs:
         run: python3 controller/scripts/ci_cutover/runtime_windows_ingress.py
   windows:
     needs: admit
-    uses: jsdfhasuh/python_build_scripts/.github/workflows/windows-package-mainline-v2.yml@115fc370e924cd0f32c49f2d3994573267db8685
+    uses: jsdfhasuh/python_build_scripts/.github/workflows/windows-package-mainline-v2.yml@06dc601dc2f4a0e146ed90978b4629d3bb371523
     permissions:
       contents: read
     with:
