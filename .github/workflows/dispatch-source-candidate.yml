@@ -1,24 +1,52 @@
-name: Candidate event-bound Source worker (registration only)
+# Separate immutable tag candidate. This path is registered, but this tag's
+# workflow runs only a transport fixture, never the accepted Source workload.
+name: Isolated native transport canary
 run-name: emo-ci-candidate-${{ inputs.receipt_key }}
 on:
   workflow_dispatch:
     inputs:
-      receipt_key:
-        description: Opaque exact broker request SHA-256 (not credentials)
-        required: true
-        type: string
-      request:
-        description: Bounded broker identity record, not credentials
-        required: true
-        type: string
+      request: {required: true, type: string}
+      receipt_key: {required: true, type: string}
 permissions: {}
 jobs:
-  registration-only:
+  canary:
+    name: Synthetic native transport and V2 proof
+    if: >-
+      github.repository_id == '1468905732' && github.actor_id == '49879362' &&
+      github.ref == 'refs/tags/ci-worker-native-transport-canary-v1' &&
+      github.workflow_sha == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
-    timeout-minutes: 1
+    timeout-minutes: 5
+    permissions: {contents: read}
     steps:
-      - name: Refuse execution on the registration ref
-        shell: bash
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci_cutover/native_canary.py
+          sparse-checkout-cone-mode: false
+      - name: Bind actual event and build a synthetic fixture without product checkout
+        env:
+          REQUEST: ${{ inputs.request }}
+          KEY: ${{ inputs.receipt_key }}
+        run: python3 -I scripts/ci_cutover/native_canary.py
+      - name: Encrypt synthetic proof with the pinned V2 public recipient
+        env:
+          RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
         run: |
-          echo 'Source registration only. A reviewed immutable worker tag is required.'
-          exit 1
+          set -euo pipefail
+          umask 077
+          cd "$RUNNER_TEMP"
+          [[ "$RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]
+          test "$(printf %s "$RECIPIENT" | sha256sum | cut -d' ' -f1)" = ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-time 60 -o age.tgz https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
+          printf '%s  age.tgz\n' 7df45a6cc87d4da11cc03a539a7470c15b1041ab2b396af088fe9990f7c79d50 | sha256sum --status -c -
+          tar -xzOf age.tgz age/age > age-v2
+          chmod 500 age-v2
+          ./age-v2 -r "$RECIPIENT" -o proof.age proof.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-canary-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/proof.age
+          retention-days: 7
+          if-no-files-found: error
