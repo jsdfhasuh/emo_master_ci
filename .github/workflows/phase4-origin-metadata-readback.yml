@@ -1,0 +1,52 @@
+name: Isolated origin metadata readback (Dot)
+on:
+  push:
+    branches: [dot/phase4-native-transport-canary-20261128]
+    paths: [.github/workflows/phase4-origin-metadata-readback.yml]
+permissions: {}
+jobs:
+  compare:
+    if: github.repository_id == '1468905732' && github.actor_id == '49879362'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions: {actions: read}
+    steps:
+      - name: Compare anonymous and repository-scoped public metadata lookup without payload output
+        env:
+          REPO_READBACK: ${{ github.token }}
+        run: |
+          python3 -I - <<'PY'
+          import json, os, re, urllib.error, urllib.request
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *_):
+                  return None
+          api = urllib.request.build_opener(NoRedirect())
+          token = os.environ.pop("REPO_READBACK")
+          paths = (
+              ("manual_origin", "/repos/jsdfhasuh/emo_master/actions/runs/46133611889", 46133611889),
+              ("manual_artifact", "/repos/jsdfhasuh/emo_master/actions/artifacts/15257929017", 15257929017),
+              ("own_run", "/repos/jsdfhasuh/emo_master_ci/actions/runs/" + os.environ["GITHUB_RUN_ID"], int(os.environ["GITHUB_RUN_ID"])),
+              ("private_broker_visibility", "/repos/jsdfhasuh/test/actions/workflows/433405724", None),
+          )
+          for name, path, expected in paths:
+              for method in ("anonymous", "repository_token"):
+                  headers = {"Accept":"application/vnd.github+json","User-Agent":"isolated-native-canary"}
+                  if method == "repository_token":
+                      headers["Authorization"] = "Bearer " + token
+                  req = urllib.request.Request("https://api.github.com" + path, headers=headers)
+                  try:
+                      with api.open(req, timeout=12) as response:
+                          raw = response.read(262145)
+                          if expected is None or len(raw) > 262144 or json.loads(raw).get("id") != expected:
+                              raise ValueError("unexpected metadata identity")
+                          print(name, method, "http=200 identity=match", flush=True)
+                  except urllib.error.HTTPError as error:
+                      with error:
+                          def bounded(key):
+                              v = error.headers.get(key, "") if error.headers else ""
+                              return v if re.fullmatch(r"[0-9]{1,12}", v) else "not_reported"
+                          remaining, reset, retry = map(bounded, ("X-RateLimit-Remaining","X-RateLimit-Reset","Retry-After"))
+                          print(name, method, f"http={error.code} remaining={remaining} reset={reset} retry_after={retry}", flush=True)
+                  except (ValueError, OSError):
+                      print(name, method, "refused_response_or_transport", flush=True)
+          PY
