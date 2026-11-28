@@ -14,6 +14,7 @@ permissions:
   contents: read
 jobs:
   admit:
+    permissions: {contents: read, actions: read}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -35,6 +36,7 @@ jobs:
           WORKER_ROUTE: windows-package
           WORKER_REQUEST: ${{ inputs.request }}
           WORKER_RECEIPT: ${{ inputs.receipt_key }}
+          PUBLIC_ACTIONS_READ_TOKEN: ${{ github.token }}
         run: python3 controller/scripts/ci_cutover/buildonly_designer_ingress.py
   windows:
     needs: admit

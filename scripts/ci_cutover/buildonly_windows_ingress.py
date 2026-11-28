@@ -1,5 +1,6 @@
-"""Credential-free Source worker identity check while the product is Public."""
+"""Scoped GitHub read-only Source worker identity check while the product is Public."""
 import json
+import os
 import re
 from urllib.parse import quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -15,8 +16,11 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def fetch(path):
+    token=os.environ.get("PUBLIC_ACTIONS_READ_TOKEN","")
+    require(bool(token) and token.isascii() and not any(c.isspace() for c in token))
+    require(path.startswith("/") and not path.startswith("//") and "\\" not in path and "\n" not in path)
     req=Request(BASE+path,headers={"Accept":"application/vnd.github+json",
-                    "X-GitHub-Api-Version":"2022-11-28","User-Agent":"emo-ci-public-source-ingress"})
+                    "X-GitHub-Api-Version":"2022-11-28","User-Agent":"emo-ci-public-source-ingress","Authorization":"Bearer "+token})
     with build_opener(NoRedirect()).open(req,timeout=15) as response:
         data=response.read(MAX+1)
     require(len(data)<=MAX)
