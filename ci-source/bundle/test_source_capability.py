@@ -15,3 +15,6 @@ class CapabilityTest(unittest.TestCase):
                           ("expires_at",302),("expires_at",10),("url","https://evil.example/path?sig=secret")]:
             with self.subTest(key=key), self.assertRaisesRegex(ValueError,"^invalid source capability$"):
                 parse(obj | {key:value})
+        # A configuration string must never be mistaken for an exact host set.
+        with self.assertRaisesRegex(ValueError,"^invalid source capability$"):
+            parse_capability(json.dumps(obj).encode(),binding,10,host)

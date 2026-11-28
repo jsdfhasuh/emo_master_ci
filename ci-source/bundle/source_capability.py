@@ -23,6 +23,11 @@ def parse_capability(payload, expected, now, allowed_hosts):
     try:
         if type(payload) is not bytes or not 0 < len(payload) <= 8192 or type(now) is not int:
             raise invalid()
+        if (type(allowed_hosts) not in (set, frozenset, tuple) or not 0 < len(allowed_hosts) <= 12 or
+                any(type(host) is not str or not re.fullmatch(
+                    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+",
+                    host) for host in allowed_hosts)):
+            raise invalid()
         manifest = json.loads(payload.decode("utf-8"), object_pairs_hook=unique)
         if not isinstance(manifest, dict) or manifest.keys() != KEYS:
             raise invalid()
