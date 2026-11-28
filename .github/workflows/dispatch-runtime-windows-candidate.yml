@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Reject unreviewed caller before checkout
         if: >-
-          ${{ !(github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/tags/ci-worker-buildonly-review-20261127' && github.workflow_ref == 'jsdfhasuh/emo_master_ci/.github/workflows/dispatch-runtime-windows-candidate.yml@refs/tags/ci-worker-buildonly-review-20261127' && github.actor_id == '49879362' && github.run_attempt == '1') }}
+          ${{ !(github.repository == 'jsdfhasuh/emo_master_ci' && github.repository_id == '1468905732' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/tags/ci-worker-stage4-buildonly-exact-review' && github.workflow_ref == 'jsdfhasuh/emo_master_ci/.github/workflows/dispatch-runtime-windows-candidate.yml@refs/tags/ci-worker-stage4-buildonly-exact-review' && github.actor_id == '49879362' && github.run_attempt == '1') }}
         run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -3,7 +3,7 @@
   "enabled": true,
   "origin_path": ".github/workflows/validate-windows-package.yml",
   "origin_workflow_id": 374506372,
-  "approved_emitter_blob": "5b42f865f1c0f918b9da22599bc37a01bff1d1a7",
+  "approved_emitter_blob": "4db1a881cfc4c68f2869c884b74d3a48fb375586",
   "trusted_manual_branches": [
     "dot/designer-frozen-origin-recovery-20261127"
   ],
@@ -13,6 +13,6 @@
     ".github/workflows/emit-ci-cutover-request.yml": "e8ca828481afc4f41d0d39a014ab697f86f8f382",
     "scripts/ci_cutover/request_emitter.py": "287bae93af96c277c76b995479a9a8d1a1518d32"
   },
-  "expected_native_head": "eebd9561fdf9a78564b545961dab4e83a5b121cb",
-  "expected_execution_sha": "7fccb4988ad0e4abd390110dbb29c80151f5bb3b"
+  "expected_native_head": "faf8ab1573f5d04eca082cda3636ce4eda542f40",
+  "expected_execution_sha": "348a39f42a5f8d43d3319a894857db9e9e6ce059"
 }
