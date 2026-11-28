@@ -61,8 +61,8 @@ def config():
     sha=os.environ["APPROVED_SHA"]; tag=os.environ["APPROVED_TAG"]; wid=int(os.environ["APPROVED_WORKFLOW_ID"])
     must(re.fullmatch(r'[0-9a-f]{40}',sha) and re.fullmatch(r'dot-transport-fixture-[a-zA-Z0-9.-]{1,64}',tag) and wid>0,"unreviewed config")
     return sha,tag,wid
-def binding(nonce,run,sha,tag,wid,cert):
-    return dict(v=1,nonce=nonce,run=run,attempt=1,controller=sha,tag=tag,workflow=wid,public_repository=PUBLIC_ID,private_repository=PRIVATE_ID,
+def binding(nonce,run,sha,tag,wid,cert,platform):
+    return dict(v=1,platform=platform,nonce=nonce,run=run,attempt=1,controller=sha,tag=tag,workflow=wid,public_repository=PUBLIC_ID,private_repository=PRIVATE_ID,
                 source=FIX_SHA,blob_sha256=FIX_HASH,recipient_sha256=digest(cert))
 def ossl(*args):
     p=subprocess.run(["openssl",*map(str,args)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
