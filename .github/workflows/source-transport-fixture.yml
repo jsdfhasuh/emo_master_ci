@@ -36,6 +36,10 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           sparse-checkout: ci-source
+      - name: Check courier prerequisites before publishing any artifact
+        run: |
+          python --version
+          openssl version
       - if: inputs.mode == 'receive'
         run: python ci-source/receive_fixture.py key
       - if: inputs.mode == 'receive'

@@ -1,5 +1,21 @@
 import shutil,sys,time
 from fixture_common import *
+def verify_private_source_is_not_public(open_request=None):
+    # No Authorization, no redirects, and no response/log body.
+    request = urllib.request.Request(
+        API + "test/contents/ci-evidence/fixtures/executable-source-v1.py?ref=" + fixture_sha(),
+        headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"},
+    )
+    open_request = open_request or urllib.request.build_opener(NoRedirect()).open
+    try:
+        with open_request(request, timeout=12):
+            pass
+    except urllib.error.HTTPError as error:
+        must(error.code == 404, "anonymous fixture check did not return HTTP 404")
+        return
+    raise ValueError("anonymous fixture unexpectedly reachable")
+
+
 def main():
     sha,tag,wid=config(); nonce=os.environ["NONCE"]; run=int(os.environ["GITHUB_RUN_ID"]); d=Path(os.environ["RUNNER_TEMP"])/"source-fixture"
     platform=os.environ["PLATFORM"]
@@ -13,7 +29,10 @@ def main():
         sealed=base64.b64decode(os.environ["SEALED"],validate=True); must(128<=len(sealed)<=8192,"sealed size")
         d.mkdir(mode=0o700); (d/"sealed.der").write_bytes(sealed); return
     if sys.argv[1]=="key":
-        must(not os.environ.get("SEALED"),"request shape"); d.mkdir(mode=0o700)
+        must(not os.environ.get("SEALED"),"request shape")
+        verify_private_source_is_not_public()
+        print("anonymous_private_fixture_http=404")
+        d.mkdir(mode=0o700)
         ossl("req","-x509","-newkey","rsa:3072","-nodes","-days","1","-subj","/CN=fixture","-keyout",d/"one-use.key","-out",d/"recipient.pem")
         (d/"one-use.key").chmod(0o600); return
     token=os.environ.pop("PUBLIC_READ_TOKEN"); title=f"source-fixture {platform} relay {nonce}"
