@@ -32,7 +32,19 @@ def main():
     obj=json.loads((d/"opened.tmp").read_bytes())
     must(obj["binding"]==binding(nonce,run,sha,tag,wid,(d/"recipient.pem").read_bytes(),platform),"wrong request")
     fixture=base64.b64decode(obj["fixture"],validate=True);must(digest(fixture)==FIX_HASH,"fixture SHA")
+    program=d/"fixture.py"
+    with program.open("xb") as f:
+        f.write(fixture)
+    # All fetched input is rejected unless it equals the exact reviewed bytes.
+    run_env={k:os.environ[k] for k in ("SYSTEMROOT","WINDIR") if k in os.environ}
+    try:
+        result=subprocess.run([sys.executable,"-I","-S","-B",str(program)],cwd=d,env=run_env,
+                              capture_output=True,timeout=10,check=False)
+        must(result.returncode==0 and result.stdout.splitlines()==[b"emo-private-source-fixture-executed-v1"]
+             and not result.stderr,"exact fixture execution refused")
+    finally:
+        program.unlink(missing_ok=True)
     challenge=obj["challenge"]; must(re.fullmatch("[0-9a-f]{64}",challenge),"challenge shape")
-    (d/"proof.json").write_bytes(canon({"binding":obj["binding"],"challenge_sha256":digest(bytes.fromhex(challenge))}))
+    (d/"proof.json").write_bytes(canon({"binding":obj["binding"],"challenge_sha256":digest(bytes.fromhex(challenge)),"executed":True}))
     print("private_fixture_received=true sha256="+FIX_HASH+" courier_run="+str(rid))
 if __name__=="__main__": main()

@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 10
     env:
       APPROVED_SHA: ${{ vars.SOURCE_FIXTURE_WORKER_SHA }}
+      REVIEWED_FIXTURE_SHA: ${{ vars.SOURCE_FIXTURE_EXECUTABLE_SHA }}
       APPROVED_TAG: ${{ vars.SOURCE_FIXTURE_TAG }}
       APPROVED_WORKFLOW_ID: ${{ vars.SOURCE_FIXTURE_WORKFLOW_ID }}
       PLATFORM: ${{ inputs.platform }}

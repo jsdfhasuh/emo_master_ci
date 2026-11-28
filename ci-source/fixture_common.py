@@ -7,8 +7,7 @@ PUBLIC_ID=1468905732
 PRIVATE_ID=1235125559
 OWNER=49879362
 WORKFLOW=".github/workflows/source-transport-fixture.yml"
-FIX_SHA="7e453c4e8397c66dbf6868c66be5fcb065804039"
-FIX_HASH="60bd32046fe070c8ae67a0bee0c5710f021fae682cb08bbd01047ca950948fdb"
+FIX_HASH="08cab61989bb02cdd19a095923a27a224cb976fe91cfa6fe229ddf8754e26ba5"
 MAX=1000000
 def must(ok, reason):
     if not ok: raise ValueError(reason)
@@ -61,9 +60,14 @@ def config():
     sha=os.environ["APPROVED_SHA"]; tag=os.environ["APPROVED_TAG"]; wid=int(os.environ["APPROVED_WORKFLOW_ID"])
     must(re.fullmatch(r'[0-9a-f]{40}',sha) and re.fullmatch(r'dot-transport-fixture-[a-zA-Z0-9.-]{1,64}',tag) and wid>0,"unreviewed config")
     return sha,tag,wid
+def fixture_sha():
+    pin=os.environ["REVIEWED_FIXTURE_SHA"]
+    must(re.fullmatch("[0-9a-f]{40}",pin),"invalid source commit pin")
+    return pin
+
 def binding(nonce,run,sha,tag,wid,cert,platform):
     return dict(v=1,platform=platform,nonce=nonce,run=run,attempt=1,controller=sha,tag=tag,workflow=wid,public_repository=PUBLIC_ID,private_repository=PRIVATE_ID,
-                source=FIX_SHA,blob_sha256=FIX_HASH,recipient_sha256=digest(cert))
+                source=fixture_sha(),blob_sha256=FIX_HASH,recipient_sha256=digest(cert))
 def ossl(*args):
     p=subprocess.run(["openssl",*map(str,args)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     must(p.returncode==0,"openssl verification refused")
