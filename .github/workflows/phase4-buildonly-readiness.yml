@@ -1,0 +1,33 @@
+name: Read exact new Windows BuildOnly gate readiness (Dot)
+on:
+  push:
+    branches: [dot/phase4-native-transport-canary-20261128]
+    paths: [.github/workflows/phase4-buildonly-readiness.yml]
+permissions: {}
+jobs:
+  audit:
+    if: github.repository_id == '1468905732' && github.actor_id == '49879362'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions: {actions: read}
+    env:
+      CANDIDATE: ${{ vars.EMO_CI_CANDIDATE_WORKER_SHA }}
+      BROKER_ACTOR: ${{ vars.EMO_CI_CANDIDATE_BROKER_ACTOR_ID }}
+      RUNTIME_DARK: ${{ vars.EMO_CI_RUNTIME_WINDOWS_DARK_PILOT }}
+      DESIGNER_DARK: ${{ vars.EMO_CI_WINDOWS_DARK_PILOT }}
+      V2_RECIPIENT: ${{ vars.CI_EVIDENCE_RECIPIENT_V2 }}
+    steps:
+      - name: Report only candidate equality and boolean or format state
+        run: |
+          python3 -I - <<'PY'
+          from hashlib import sha256
+          import os
+          candidate=os.environ.get("CANDIDATE","")
+          print("worker_config="+("matches" if candidate=="820559a43c049506d3410d390740c4b2f7668672" else "different" if candidate else "unset"))
+          actor=os.environ.get("BROKER_ACTOR","")
+          print("actor_config="+("matches" if actor=="49879362" else "different" if actor else "unset"))
+          print("runtime_dark="+str(os.environ.get("RUNTIME_DARK")=="true").lower())
+          print("designer_dark="+str(os.environ.get("DESIGNER_DARK")=="true").lower())
+          fp=sha256(os.environ.get("V2_RECIPIENT","").encode()).hexdigest()
+          print("recipient_v2="+("verified" if fp=="ba311eeae31312c73f57c9a2cc4c80bbb58380e7c3df956db1d09432b79cca87" else "refused"))
+          PY
