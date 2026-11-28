@@ -1,0 +1,61 @@
+name: Capture output drain regression (synthetic only)
+on:
+  push:
+    branches: [dot/mainline-ci-migration-20261124]
+    paths: ['.github/workflows/capture-output-drain-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  regression:
+    if: github.repository_id == '1468905732' && github.ref == 'refs/heads/dot/mainline-ci-migration-20261124'
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Verify actual Capture output drain with synthetic streams
+        shell: python
+        run: |
+          import ast, io, tempfile, threading, time
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          text=Path(".github/workflows/capture-v2-shadow.yml").read_text(encoding="utf-8")
+          section=text.partition("      - name: Run original pytest suite with private bounded observations\n")[2]
+          assert section
+          code=section.partition("        run: |\n")[2].partition("      - name: Validate bounded synthetic")[0]
+          assert code
+          actual=ast.parse("\n".join(line[10:] for line in code.splitlines()))
+          nodes=[n for n in actual.body if isinstance(n,ast.FunctionDef) and n.name=="drain"]
+          assert len(nodes)==1
+          testable=compile(ast.Module(body=nodes,type_ignores=[]),"<capture-drain>","exec")
+          capacity=4*1024*1024
+          def exercise(stream, expected, failed):
+              with tempfile.TemporaryDirectory() as temp:
+                  root=Path(temp)
+                  event=threading.Event()
+                  ctx=dict(root=root, limit=capacity, worker=SimpleNamespace(stdout=stream),
+                           time=time, drain_failed=event)
+                  exec(testable,ctx)
+                  ctx["drain"]()
+                  assert event.is_set()==failed
+                  assert (root/"observed-output.log").read_bytes()==expected
+                  assert not (root/"observed-output.staging").exists()
+          raw=bytes(range(256))*(capacity//256)+b"suffix"*200000
+          exercise(io.BytesIO(raw),raw[-capacity:],False)
+          exercise(io.BytesIO(),b"",False)
+          class Interrupted:
+              def __init__(self):
+                  self.read=False
+              def read1(self,_n):
+                  if self.read:
+                      raise OSError("synthetic reader fault")
+                  self.read=True
+                  return b"retained before failure"
+          exercise(Interrupted(),b"retained before failure",True)
+          print("capture_output_drain_synthetic=3/3")
