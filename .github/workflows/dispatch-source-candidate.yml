@@ -13,11 +13,11 @@ jobs:
     name: Synthetic native transport and V2 proof
     if: >-
       github.repository_id == '1468905732' && github.actor_id == '49879362' &&
-      github.ref == 'refs/tags/ci-worker-native-transport-canary-v2' &&
+      github.ref == 'refs/tags/ci-worker-native-transport-canary-v3' &&
       github.workflow_sha == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {contents: read}
+    permissions: {contents: read, actions: read}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,6 +29,7 @@ jobs:
         env:
           REQUEST: ${{ inputs.request }}
           KEY: ${{ inputs.receipt_key }}
+          PUBLIC_ACTIONS_READ_TOKEN: ${{ github.token }}
         run: python3 -I scripts/ci_cutover/native_canary.py
       - name: Encrypt synthetic proof with the pinned V2 public recipient
         env:

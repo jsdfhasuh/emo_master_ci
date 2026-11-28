@@ -7,7 +7,7 @@ import re
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-TAG="ci-worker-native-transport-canary-v2"
+TAG="ci-worker-native-transport-canary-v3"
 PATH=".github/workflows/dispatch-source-candidate.yml"
 OWNER=49879362
 WID=432245931
@@ -123,10 +123,13 @@ class NoRedirect(HTTPRedirectHandler):
 
 def main():
     env=os.environ
+    token=env.pop("PUBLIC_ACTIONS_READ_TOKEN")
+    if not token.isascii() or not token or any(c.isspace() for c in token):
+        raise CanaryRefused("origin_metadata", "missing_repository_read_token")
     http=build_opener(NoRedirect())
     def get(path):
         req=Request("https://api.github.com/repos/jsdfhasuh/emo_master"+path,
-                    headers={"Accept":"application/vnd.github+json","User-Agent":"isolated-native-canary"})
+                    headers={"Accept":"application/vnd.github+json","User-Agent":"isolated-native-canary","Authorization":"Bearer "+token})
         with http.open(req,timeout=15) as r: data=r.read(262145)
         if len(data)>262144: raise ValueError("size bound")
         return json.loads(data)
