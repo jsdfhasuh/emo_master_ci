@@ -1,0 +1,75 @@
+name: Isolated private source transfer fixture (no product execution)
+run-name: source-fixture ${{ inputs.platform }} ${{ inputs.mode }} ${{ inputs.nonce }}
+on:
+  workflow_dispatch:
+    inputs:
+      mode: {type: choice, required: true, options: [receive, relay]}
+      platform: {type: choice, required: true, options: [linux, windows]}
+      nonce: {type: string, required: true}
+      sealed: {type: string, required: false}
+permissions: {}
+concurrency:
+  group: source-fixture-${{ inputs.platform }}-${{ inputs.mode }}-${{ inputs.nonce }}
+  cancel-in-progress: false
+jobs:
+  fixture:
+    if: >-
+      github.repository_id == '1468905732' && github.actor_id == '49879362' &&
+      github.run_attempt == '1' && github.ref_type == 'tag' &&
+      github.ref_name == vars.SOURCE_FIXTURE_TAG && github.sha == vars.SOURCE_FIXTURE_WORKER_SHA
+    permissions: {contents: read, actions: read}
+    runs-on: ${{ inputs.mode == 'receive' && inputs.platform == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    env:
+      APPROVED_SHA: ${{ vars.SOURCE_FIXTURE_WORKER_SHA }}
+      REVIEWED_FIXTURE_SHA: ${{ vars.SOURCE_FIXTURE_EXECUTABLE_SHA }}
+      APPROVED_TAG: ${{ vars.SOURCE_FIXTURE_TAG }}
+      APPROVED_WORKFLOW_ID: ${{ vars.SOURCE_FIXTURE_WORKFLOW_ID }}
+      PLATFORM: ${{ inputs.platform }}
+      NONCE: ${{ inputs.nonce }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: ci-source
+      - name: Check courier prerequisites before publishing any artifact
+        run: |
+          python --version
+          openssl version
+      - if: inputs.mode == 'receive'
+        run: python ci-source/receive_fixture.py key
+      - if: inputs.mode == 'receive'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: recipient-${{ inputs.nonce }}
+          path: ${{ runner.temp }}/source-fixture/recipient.pem
+          if-no-files-found: error
+          retention-days: 1
+      - if: inputs.mode == 'receive'
+        run: python ci-source/receive_fixture.py receive
+        env:
+          PUBLIC_READ_TOKEN: ${{ github.token }}
+      - if: inputs.mode == 'receive'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: received-${{ inputs.nonce }}
+          path: ${{ runner.temp }}/source-fixture/proof.json
+          if-no-files-found: error
+          retention-days: 1
+      - if: inputs.mode == 'relay'
+        run: python ci-source/receive_fixture.py relay
+        env:
+          SEALED: ${{ inputs.sealed }}
+      - if: inputs.mode == 'relay'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: sealed-${{ inputs.nonce }}
+          path: ${{ runner.temp }}/source-fixture/sealed.der
+          if-no-files-found: error
+          retention-days: 1
+      - if: always()
+        run: python ci-source/receive_fixture.py cleanup
