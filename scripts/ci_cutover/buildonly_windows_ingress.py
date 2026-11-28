@@ -18,7 +18,7 @@ class NoRedirect(HTTPRedirectHandler):
 def fetch(path):
     token=os.environ.get("PUBLIC_ACTIONS_READ_TOKEN","")
     require(bool(token) and token.isascii() and not any(c.isspace() for c in token))
-    require(path.startswith("/") and not path.startswith("//") and "\\" not in path and "\n" not in path)
+    require(path=="" or (path.startswith("/") and not path.startswith("//") and "\\" not in path and "\n" not in path))
     req=Request(BASE+path,headers={"Accept":"application/vnd.github+json",
                     "X-GitHub-Api-Version":"2022-11-28","User-Agent":"emo-ci-public-source-ingress","Authorization":"Bearer "+token})
     with build_opener(NoRedirect()).open(req,timeout=15) as response:
